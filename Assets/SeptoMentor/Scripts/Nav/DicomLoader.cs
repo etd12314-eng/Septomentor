@@ -163,7 +163,7 @@ namespace SeptoMentor.Nav
         /// len = -1 only for undefined-length pixel data.</summary>
         static void ReadElement(byte[] d, ref int pos, bool explicitVr, out uint tag, out int len, out int valPos)
         {
-            tag = ((uint)U16(d, pos) << 16) | U16(d, pos + 2);
+            tag = ((uint)U16(d, pos) << 16) | (uint)U16(d, pos + 2);
             pos += 4;
             string vr = null;
             uint rawLen;
@@ -172,7 +172,7 @@ namespace SeptoMentor.Nav
             {
                 vr = Encoding.ASCII.GetString(d, pos, 2);
                 if (LongVr.Contains(vr)) { rawLen = U32(d, pos + 4); pos += 8; }
-                else { rawLen = U16(d, pos + 2); pos += 4; }
+                else { rawLen = (uint)U16(d, pos + 2); pos += 4; }
             }
             else { rawLen = U32(d, pos); pos += 4; }
 
@@ -197,7 +197,7 @@ namespace SeptoMentor.Nav
         {
             while (pos + 8 <= d.Length)
             {
-                uint tag = ((uint)U16(d, pos) << 16) | U16(d, pos + 2);
+                uint tag = ((uint)U16(d, pos) << 16) | (uint)U16(d, pos + 2);
                 if (tag == 0xFFFEE0DD || tag == 0xFFFEE00D) { pos += 8; return; }   // sequence / item delimiter
                 if (tag == 0xFFFEE000)
                 {
