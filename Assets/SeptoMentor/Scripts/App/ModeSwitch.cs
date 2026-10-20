@@ -7,6 +7,7 @@ namespace SeptoMentor
     /// <summary>
     /// Main menu: A = XR navigation (passthrough, operating room), B = VR training simulator.
     /// Also added to the other scenes: hold BOTH grips for 2 s to come back here.
+    /// With hand tracking the two modes are big buttons to poke, and the hand menus' "home" button is held instead of the grips.
     /// </summary>
     public class ModeSwitch : MonoBehaviour
     {
@@ -17,6 +18,7 @@ namespace SeptoMentor
         public Transform head;
 
         Label3D _title, _body;
+        HandMenu _buttons;
         bool _a, _b;
         float _gripsSince = -1;
 
@@ -33,8 +35,16 @@ namespace SeptoMentor
             _body.SetBox(80, 20);
             _body.Set("A  -  XR Navigation (operating room, passthrough, patient CT)\n\n" +
                       "B  -  VR Training simulator (virtual endoscope)\n\n" +
-                      "Research prototype - not a medical device. Hold both grips for 2 s in any mode to return here.",
+                      "Research prototype - not a medical device. Hold both grips for 2 s in any mode to return here.\n" +
+                      "Hand tracking: poke a button below; later, turn your left palm toward you for the menu.",
                       new Color(0.85f, 0.9f, 1f));
+            _buttons = new GameObject("HandButtons").AddComponent<HandMenu>();
+            _buttons.anchor = HandMenu.Anchor.Fixed;
+            _buttons.columns = 2;
+            _buttons.buttonSize = new Vector2(0.14f, 0.06f);
+            _buttons.gap = 0.03f;
+            _buttons.AddButton("xr", "XR Navigation");
+            _buttons.AddButton("vr", "VR Training");
             Invoke(nameof(Place), 0.5f);
         }
 
@@ -44,6 +54,10 @@ namespace SeptoMentor
             var fwd = Vector3.ProjectOnPlane(head.forward, Vector3.up);
             if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
             transform.SetPositionAndRotation(head.position + fwd.normalized * 1.0f, Quaternion.LookRotation(fwd.normalized, Vector3.up));
+            // Within arm's reach, below the line of sight.
+            if (_buttons != null)
+                _buttons.transform.SetPositionAndRotation(head.position + fwd.normalized * 0.45f - Vector3.up * 0.2f,
+                    Quaternion.LookRotation(fwd.normalized, Vector3.up) * Quaternion.Euler(25f, 0, 0));
         }
 
         void Update()
@@ -52,11 +66,12 @@ namespace SeptoMentor
             var l = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
             if (isLauncher)
             {
-                if (Pressed(r, CommonUsages.primaryButton, ref _a) || KeyA()) SceneManager.LoadScene(NavigationScene);
-                else if (Pressed(r, CommonUsages.secondaryButton, ref _b) || KeyB()) SceneManager.LoadScene(TrainingScene);
+                bool xr = _buttons != null && _buttons.Pressed("xr"), vr = _buttons != null && _buttons.Pressed("vr");
+                if (Pressed(r, CommonUsages.primaryButton, ref _a) || KeyA() || xr) SceneManager.LoadScene(NavigationScene);
+                else if (Pressed(r, CommonUsages.secondaryButton, ref _b) || KeyB() || vr) SceneManager.LoadScene(TrainingScene);
                 return;
             }
-            bool both = Held(r, CommonUsages.gripButton) && Held(l, CommonUsages.gripButton);
+            bool both = Held(r, CommonUsages.gripButton) && Held(l, CommonUsages.gripButton) || HandMenu.HomeHeldFor(0f);
             if (!both) { _gripsSince = -1; return; }
             if (_gripsSince < 0) _gripsSince = Time.time;
             if (Time.time - _gripsSince > 2f) SceneManager.LoadScene(LauncherScene);

@@ -22,6 +22,7 @@ namespace SeptoMentor.EditorTools
             "com.unity.openxr.feature.arfoundation-meta-session",   // Meta Quest: Session (AR Foundation)
             "com.unity.openxr.feature.arfoundation-meta-camera",    // Meta Quest: Camera (Passthrough)
             "com.unity.openxr.feature.compositionlayers",           // required by the passthrough layer
+            "com.unity.openxr.feature.input.handtracking",          // XR Hands: Hand Tracking Subsystem
         };
 
         [MenuItem("SeptoMentor/Configure OpenXR (Android)")]

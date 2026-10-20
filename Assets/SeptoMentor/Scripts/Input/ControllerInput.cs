@@ -11,6 +11,8 @@ namespace SeptoMentor
     ///   Right stick: scope look (hold right grip: twist instrument)   Left stick Y: advance scope
     ///   Right trigger: toggle labels   Left trigger: simulate mucosal tear (synthetic only)
     /// Editor keys: N, I, R, Q, L, T, arrows (look), W/S (advance), G (hold = twist).
+    /// Hands (controllers put down): left palm toward the face = button menu (poke with the right index finger);
+    /// right pinch and drag = scope look (left/right/up/down) and advance (push away / pull back).
     /// </summary>
     public class ControllerInput : MonoBehaviour
     {
@@ -21,6 +23,19 @@ namespace SeptoMentor
         public float Twist { get; private set; }
 
         bool _a, _b, _x, _y, _rt, _lt;
+        HandMenu _menu;
+        readonly Pinch _pinch = new Pinch(true);
+        Vector3 _pinchStart;
+
+        void Start()
+        {
+            _menu = new GameObject("HandMenu").AddComponent<HandMenu>();
+            _menu.head = Camera.main != null ? Camera.main.transform : null;
+            _menu.AddButton("next", "Next phase\n(A)"); _menu.AddButton("instr", "Instrument\n(B)"); _menu.AddButton("recenter", "Recenter\n(X)");
+            _menu.AddButton("ai", "Ask AI\n(Y)"); _menu.AddButton("labels", "Labels"); _menu.AddButton("tear", "Sim. tear");
+            _menu.AddButton("home", "Hold 2 s:\nmenu");
+            new GameObject("Hands").AddComponent<HandSkeleton>();   // VR: the real hands are not visible
+        }
 
         void Update()
         {
@@ -43,7 +58,33 @@ namespace SeptoMentor
             Twist = grip ? rs.x : 0f;
             Advance = ls.y;
 
+            HandControls();
+
             KeyboardFallback();
+        }
+
+        void HandControls()
+        {
+            if (_menu == null) return;
+            if (_menu.Pressed("next")) NextPhase?.Invoke();
+            if (_menu.Pressed("instr")) CycleInstrument?.Invoke();
+            if (_menu.Pressed("recenter")) Recenter?.Invoke();
+            if (_menu.Pressed("ai")) AskAI?.Invoke();
+            if (_menu.Pressed("labels")) ToggleLabels?.Invoke();
+            if (_menu.Pressed("tear")) SimulateTear?.Invoke();
+
+            // Pinch-and-drag acts as a joystick: 6 cm of hand travel = full deflection.
+            _pinch.Update(!_menu.Visible);
+            var head = _menu.head;
+            if (head == null || !HandTracking.TryGetJointWorld(true, UnityEngine.XR.Hands.XRHandJointID.ThumbTip, out var thumb)) return;
+            if (_pinch.Down) _pinchStart = thumb.position;
+            if (!_pinch.Held) return;
+            var d = (thumb.position - _pinchStart) / 0.06f;
+            var fwd = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
+            var right = Vector3.Cross(Vector3.up, fwd);
+            Look = Dead(Vector2.ClampMagnitude(new Vector2(Vector3.Dot(d, right), d.y), 1f));
+            float adv = Mathf.Clamp(Vector3.Dot(d, fwd), -1f, 1f);
+            Advance = Mathf.Abs(adv) < 0.15f ? 0f : adv;
         }
 
         static Vector2 Dead(Vector2 v) => v.magnitude < 0.15f ? Vector2.zero : v;

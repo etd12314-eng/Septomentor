@@ -20,6 +20,8 @@ namespace SeptoMentor.Nav
     /// Controls: right trigger = capture / hold to collect, A = next / confirm, B = back / redo,
     /// X = overlay mode, Y = ask AI, left trigger = CT window, right stick click = move panel here,
     /// hold left grip + sticks = nudge registration, hold both grips 2 s = main menu.
+    /// Hands (controllers put down): right index fingertip = pointer (no calibration, but only ~5-10 mm
+    /// accurate), left pinch = trigger, left palm toward the face = poke menu with the other buttons.
     /// </summary>
     public class NavigationApp : MonoBehaviour, IMentorContext
     {
@@ -59,7 +61,8 @@ namespace SeptoMentor.Nav
         bool _tipCalibrated;
         Transform _tipMarker, _shaft;
         Vector3 _tipWorld, _tipModel;
-        bool _tipValid;
+        bool _tipValid, _handPointer;
+        HandMenu _handMenu;
 
         readonly List<Quaternion> _pivotRot = new List<Quaternion>();
         readonly List<Vector3> _pivotPos = new List<Vector3>();
@@ -110,6 +113,10 @@ namespace SeptoMentor.Nav
             }
             _patientRoot = new GameObject("PatientRoot").transform;
             BuildPointer();
+            _handMenu = new GameObject("HandMenu").AddComponent<HandMenu>();
+            _handMenu.head = head; _handMenu.shader = markerShader;
+            NavInput.AddMenuButtons(_handMenu);
+            _in.menu = _handMenu;
 
             SubsystemManager.GetSubsystems(Subsystems);
             foreach (var s in Subsystems) s.trackingOriginUpdated += OnTrackingOriginUpdated;
@@ -303,6 +310,15 @@ namespace SeptoMentor.Nav
                 "Rest the controller tip (or a stylus fixed to it) in a small divot that cannot move. " +
                 "HOLD the trigger and slowly pivot the controller around the tip for ~5 s, then release.\n" +
                 _calibMsg + "   A = continue" + (_tipCalibrated ? "" : " with default") + "   B = back to cases");
+            if (_handPointer)
+            {
+                dashboard.SetStep("2. Pointer: index fingertip (hand tracking)",
+                    "Your right index fingertip is the pointer - no calibration needed. Hand tracking is only accurate to ~5-10 mm: " +
+                    "for registration and verification prefer the calibrated controller.\nNext = continue   Back = back to cases");
+                if (_in.A) _step = _planMissing.Count > 0 ? Step.PlanLandmarks : Step.Register;
+                if (_in.B) { ClearCase(); _step = Step.SelectCase; }
+                return;
+            }
             if (_in.TriggerHeld && NavInput.RightPose(out var p, out var q))
             {
                 _pivotPos.Add(trackingOrigin.TransformPoint(p)); _pivotRot.Add(trackingOrigin.rotation * q);
@@ -392,7 +408,7 @@ namespace SeptoMentor.Nav
             {
                 _case.TryGetLandmark(name, out var m);
                 _regModel.Add(m); _regWorld.Add(_tipWorld);
-                logger.Log("nav", null, "landmark", null, name + " captured");
+                logger.Log("nav", null, "landmark", null, name + " captured" + (_handPointer ? " (hand pointer)" : ""));
                 _regIdx++;
             }
             else if (_in.A) _regIdx++;
@@ -637,6 +653,7 @@ namespace SeptoMentor.Nav
             var sb = new StringBuilder();
             sb.Append($"registration_error_mm={(float.IsNaN(_surfaceRms) ? _fre : _surfaceRms):0.0}");
             if (_trackingSuspect) sb.Append("; tracking_reset_unverified");
+            if (_handPointer) sb.Append("; pointer=hand_tracking_index_finger (extra 5-10 mm uncertainty)");
             sb.Append($"; tip={_nearby}");
             if (_case.TryGetLandmark("SeptumASA", out var asa)) sb.Append($"; tip_side={(_tipModel.x < asa.x ? "patient right" : "patient left")} of septum by {Mathf.Abs(_tipModel.x - asa.x) * 1000f:0} mm");
             if (!float.IsInfinity(_lStrutDistMm)) sb.Append($"; L_strut_border_mm={_lStrutDistMm:0}");
@@ -731,13 +748,30 @@ namespace SeptoMentor.Nav
 
         void UpdateTip()
         {
-            _tipValid = NavInput.RightPose(out var p, out var q);
+            bool wasHand = _handPointer;
+            _handPointer = NavInput.RightIndex(out var tip, out var distal, out var tq);
+            if (_handPointer != wasHand && _registered)
+                Emit("pointer_change", Severity.Caution, _handPointer
+                    ? "Pointer is now your right index fingertip (hand tracking, ~5-10 mm accuracy). Pick up the controller for precise pointing."
+                    : "Pointer is the controller again.", force: true);
+            Vector3 p = default; Quaternion q = Quaternion.identity;
+            _tipValid = _handPointer || NavInput.RightPose(out p, out q);
             _tipMarker.gameObject.SetActive(_tipValid);
             _shaft.gameObject.SetActive(_tipValid);
             if (!_tipValid) return;
-            _ctrlPos = trackingOrigin.TransformPoint(p);
-            _ctrlRot = trackingOrigin.rotation * q;
-            _tipWorld = _ctrlPos + _ctrlRot * _tipOffset;
+            if (_handPointer)
+            {
+                // Shaft runs along the finger; the tip joint sits at the fingertip.
+                _ctrlPos = trackingOrigin.TransformPoint(distal);
+                _ctrlRot = trackingOrigin.rotation * tq;
+                _tipWorld = trackingOrigin.TransformPoint(tip);
+            }
+            else
+            {
+                _ctrlPos = trackingOrigin.TransformPoint(p);
+                _ctrlRot = trackingOrigin.rotation * q;
+                _tipWorld = _ctrlPos + _ctrlRot * _tipOffset;
+            }
             _tipMarker.position = _tipWorld;
             var end = _shaftTarget ?? _tipWorld;
             var a = _shaftTarget.HasValue ? _tipWorld : _ctrlPos;
@@ -913,9 +947,10 @@ namespace SeptoMentor.Nav
         {
             string reg = !_registered ? "not registered"
                 : $"registered: landmarks {_fre:0.0} mm" + (float.IsNaN(_surfaceRms) ? "" : $", surface {_surfaceRms:0.0} mm") + (_nudged ? ", nudged" : "");
-            string cal = _tipCalibrated ? "tip calibrated" : "tip NOT calibrated";
+            string cal = _handPointer ? "pointer: index finger (~5-10 mm)" : _tipCalibrated ? "tip calibrated" : "tip NOT calibrated";
             var c = _trackingSuspect ? new Color(1f, 0.35f, 0.3f) : _registered ? new Color(0.6f, 1f, 0.6f) : new Color(1f, 0.85f, 0.4f);
-            dashboard.SetStatus($"{(_case != null ? _case.name : "no case")}  |  {reg}{(_trackingSuspect ? "  |  TRACKING RESET - RE-VERIFY" : "")}  |  {cal}", c);
+            string hands = _in.HandsActive ? "\nHands: left pinch = trigger, turn left palm to you = button menu (poke with right index)" : "";
+            dashboard.SetStatus($"{(_case != null ? _case.name : "no case")}  |  {reg}{(_trackingSuspect ? "  |  TRACKING RESET - RE-VERIFY" : "")}  |  {cal}{hands}", c);
 
             if (_registered && _tipValid && _case != null)
             {
