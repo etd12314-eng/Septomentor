@@ -31,7 +31,7 @@ namespace SeptoMentor.EditorTools
 
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
-                scenes = new[] { SceneBuilder.ScenePath },
+                scenes = SceneBuilder.AllScenes,
                 locationPathName = output,
                 target = BuildTarget.Android,
                 options = BuildOptions.None,

@@ -53,7 +53,12 @@ under the flap), preserve a dorsal and caudal L-strut of about 10 mm or more, re
 deviated portion, cut rather than twist at the perpendicular plate (skull-base risk), avoid \
 opposing bilateral mucosal tears, protect the turbinates, keep the view clear with suction.
 - If something sounds unsafe or uncertain, tell the resident to pause and involve the attending.
-- No patient identifiers. Do not invent measurements; quote only numbers given to you."""
+- No patient identifiers. Do not invent measurements; quote only numbers given to you.
+- If mode is xr_navigation, you are assisting a surgeon who uses a research navigation \
+prototype on a patient (or a phantom). Positions come from a CT-to-patient registration whose \
+error is stated in the navigation field; never imply better precision than that error, and when \
+a decision depends on a few millimetres, tell the surgeon to confirm on direct anatomy. Speak to \
+the surgeon as a colleague, not as a resident."""
 
 COACH_STYLE = (
     "Give one or two short spoken sentences (max 35 words) the resident can act on now. "
@@ -111,6 +116,8 @@ class Context(BaseModel):
     is_simulation: bool = True
     labels_validated: bool = False
     frame_jpeg_b64: str = ""
+    mode: str = "training"          # "training" (VR simulator) or "xr_navigation"
+    navigation: str = ""            # pointer position / distances / registration error summary
 
 
 class CoachRequest(Context):
@@ -136,7 +143,8 @@ def _scene(ctx: Context) -> str:
         f"phase={ctx.phase}; instrument={ctx.instrument}; "
         f"visible_structures={', '.join(ctx.visible_structures[:12]) or 'none'}; "
         f"recent_events={' | '.join(ctx.recent_events[-6:]) or 'none'}; "
-        f"is_simulation={ctx.is_simulation}; labels_validated={ctx.labels_validated}"
+        f"is_simulation={ctx.is_simulation}; labels_validated={ctx.labels_validated}; "
+        f"mode={ctx.mode[:20]}" + (f"; navigation={ctx.navigation[:400]}" if ctx.navigation else "")
     )
 
 

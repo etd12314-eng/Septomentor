@@ -7,6 +7,19 @@ using UnityEngine.Networking;
 
 namespace SeptoMentor
 {
+    /// <summary>Scene context sent with every AI request (VR simulator or XR navigation).</summary>
+    public interface IMentorContext
+    {
+        string Mode { get; }            // "training" or "xr_navigation"
+        string PhaseName { get; }
+        string Instrument { get; }
+        string[] VisibleStructures { get; }
+        string Navigation { get; }      // free-text navigation summary ("" in training)
+        bool IsSimulation { get; }
+        bool LabelsValidated { get; }
+        byte[] CaptureJpeg();
+    }
+
     /// <summary>
     /// Talks to proxy/server.py. The Anthropic API key and the system prompt live ONLY on
     /// the proxy. The APK holds just the proxy URL and a revocable proxy token.
@@ -28,6 +41,7 @@ namespace SeptoMentor
         [Serializable]
         class CoachRequest
         {
+            public string mode, navigation;
             public string session_id, trigger, phase, rule_id, severity, message, instrument;
             public string[] visible_structures;
             public string[] recent_events;
@@ -38,6 +52,7 @@ namespace SeptoMentor
         [Serializable]
         class AskRequest
         {
+            public string mode, navigation;
             public string session_id, question, phase, instrument;
             public string[] visible_structures;
             public string[] recent_events;
@@ -50,6 +65,28 @@ namespace SeptoMentor
 
         public SegmentationProvider provider;
         public MentorEngine engine;
+        [Tooltip("Optional MonoBehaviour implementing IMentorContext (XR navigation). Default: provider + engine.")]
+        public MonoBehaviour contextSource;
+
+        IMentorContext Ctx => contextSource as IMentorContext ?? (_vr ?? (_vr = new VrContext(this)));
+        VrContext _vr;
+
+        class VrContext : IMentorContext
+        {
+            readonly AIMentorClient _c;
+            public VrContext(AIMentorClient c) { _c = c; }
+            public string Mode => "training";
+            public string PhaseName => _c.engine.Phase.ToString();
+            public string Instrument
+            {
+                get { var f = _c.engine.LastFrame; return f == null ? "none" : StructureInfo.DisplayName(f.activeInstrument); }
+            }
+            public string[] VisibleStructures => _c.engine.VisibleStructures().ToArray();
+            public string Navigation => "";
+            public bool IsSimulation => _c.provider.IsSimulation;
+            public bool LabelsValidated => _c.provider.LabelsValidated;
+            public byte[] CaptureJpeg() => _c.provider.CaptureJpeg();
+        }
 
         [Tooltip("Runtime opt-in for sending the current frame. Default OFF.")]
         public bool sendFrames = false;
@@ -95,15 +132,15 @@ namespace SeptoMentor
             {
                 session_id = _sessionId,
                 trigger = trigger,
-                phase = engine.Phase.ToString(),
+                phase = Ctx.PhaseName, mode = Ctx.Mode, navigation = Ctx.Navigation,
                 rule_id = e.ruleId,
                 severity = e.severity.ToString(),
                 message = e.message,
-                instrument = CurrentInstrument(),
-                visible_structures = engine.VisibleStructures().ToArray(),
+                instrument = Ctx.Instrument,
+                visible_structures = Ctx.VisibleStructures,
                 recent_events = _recent.ToArray(),
-                is_simulation = provider.IsSimulation,
-                labels_validated = provider.LabelsValidated,
+                is_simulation = Ctx.IsSimulation,
+                labels_validated = Ctx.LabelsValidated,
                 frame_jpeg_b64 = MaybeFrame(),
             };
             _coachInFlight = true;
@@ -122,13 +159,13 @@ namespace SeptoMentor
             {
                 session_id = _sessionId,
                 question = question,
-                phase = engine.Phase.ToString(),
-                instrument = CurrentInstrument(),
-                visible_structures = engine.VisibleStructures().ToArray(),
+                phase = Ctx.PhaseName, mode = Ctx.Mode, navigation = Ctx.Navigation,
+                instrument = Ctx.Instrument,
+                visible_structures = Ctx.VisibleStructures,
                 recent_events = _recent.ToArray(),
                 history = _history.ToArray(),
-                is_simulation = provider.IsSimulation,
-                labels_validated = provider.LabelsValidated,
+                is_simulation = Ctx.IsSimulation,
+                labels_validated = Ctx.LabelsValidated,
                 frame_jpeg_b64 = MaybeFrame(),
             };
             StartCoroutine(Post("/v1/ask", JsonUtility.ToJson(req), r =>
@@ -141,16 +178,10 @@ namespace SeptoMentor
             }));
         }
 
-        string CurrentInstrument()
-        {
-            var f = engine.LastFrame;
-            return f == null ? "none" : StructureInfo.DisplayName(f.activeInstrument);
-        }
-
         string MaybeFrame()
         {
             if (!(_cfg.allowFrames && sendFrames)) return null;
-            var jpg = provider.CaptureJpeg();
+            var jpg = Ctx.CaptureJpeg();
             return jpg == null ? null : Convert.ToBase64String(jpg);
         }
 

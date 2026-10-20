@@ -1,4 +1,7 @@
+using System;
 using System.IO;
+using System.Linq;
+using SeptoMentor.Nav;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -12,6 +15,10 @@ namespace SeptoMentor.EditorTools
     public static class SceneBuilder
     {
         public const string ScenePath = "Assets/SeptoMentor/Scenes/SeptoMentor.unity";
+        public const string LauncherPath = "Assets/SeptoMentor/Scenes/Launcher.unity";
+        public const string NavigationPath = "Assets/SeptoMentor/Scenes/SeptoMentor_XR.unity";
+        /// <summary>Build order: the launcher (menu) starts first.</summary>
+        public static readonly string[] AllScenes = { LauncherPath, NavigationPath, ScenePath };
         public const string ObjPath = "Assets/SeptoMentor/Models/Segmentation-1.obj";
         static readonly Vector3 PatientOrigin = new Vector3(500f, 0f, 0f);   // far outside the headset camera's far clip
 
@@ -82,10 +89,82 @@ namespace SeptoMentor.EditorTools
             app.speech = speech; app.logger = logger; app.input = input;
             app.head = camGo.transform; app.userRig = userRig;
 
+            sys.AddComponent<ModeSwitch>();   // hold both grips: back to the menu
+
             EditorSceneManager.SaveScene(scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
-            AlwaysIncludeShaders("SeptoMentor/EndoTissue", "SeptoMentor/LabelId", "SeptoMentor/MonitorComposite", "SeptoMentor/Ghost");
             Debug.Log("[SeptoMentor] Scene generated: " + ScenePath);
+
+            BuildLauncher();
+            BuildNavigation();
+            EditorBuildSettings.scenes = AllScenes.Select(p => new EditorBuildSettingsScene(p, true)).ToArray();
+            AlwaysIncludeShaders("SeptoMentor/EndoTissue", "SeptoMentor/LabelId", "SeptoMentor/MonitorComposite", "SeptoMentor/Ghost",
+                                 "SeptoMentor/CtSlice", "SeptoMentor/NavGhost", "SeptoMentor/NavMarker");
+        }
+
+        /// <summary>XR origin + camera. Passthrough = transparent clear + AR Foundation camera manager (Meta OpenXR).</summary>
+        static Camera CameraRig(bool passthrough)
+        {
+            var xrOrigin = new GameObject("XROrigin").transform;
+            var camGo = new GameObject("Main Camera") { tag = "MainCamera" };
+            camGo.transform.SetParent(xrOrigin, false);
+            camGo.transform.localPosition = new Vector3(0, 1.6f, 0);
+            var cam = camGo.AddComponent<Camera>();
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = passthrough ? new Color(0, 0, 0, 0) : new Color(0.02f, 0.02f, 0.03f, 1f);
+            cam.nearClipPlane = 0.02f;
+            cam.farClipPlane = 50f;
+            camGo.AddComponent<AudioListener>();
+            camGo.AddComponent<HeadTracker>();
+            if (passthrough)
+            {
+                // By type name so this file compiles even if AR Foundation is missing.
+                var session = FindType("UnityEngine.XR.ARFoundation.ARSession");
+                var camMgr = FindType("UnityEngine.XR.ARFoundation.ARCameraManager");
+                if (session != null) new GameObject("AR Session").AddComponent(session);
+                if (camMgr != null) camGo.AddComponent(camMgr);
+                Debug.Log($"[SeptoMentor] Passthrough: ARSession {(session != null ? "ok" : "MISSING")}, ARCameraManager {(camMgr != null ? "ok" : "MISSING")}");
+            }
+            return cam;
+        }
+
+        static Type FindType(string fullName) =>
+            AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType(fullName, false)).FirstOrDefault(t => t != null);
+
+        static void BuildLauncher()
+        {
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var cam = CameraRig(true);
+            var menu = new GameObject("Menu").AddComponent<ModeSwitch>();
+            menu.isLauncher = true;
+            menu.head = cam.transform;
+            menu.transform.position = new Vector3(0, 1.5f, 1f);
+            EditorSceneManager.SaveScene(scene, LauncherPath);
+            Debug.Log("[SeptoMentor] Scene generated: " + LauncherPath);
+        }
+
+        static void BuildNavigation()
+        {
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var cam = CameraRig(true);
+
+            var sys = new GameObject("SeptoMentorNav");
+            var ai = sys.AddComponent<AIMentorClient>();
+            var speech = sys.AddComponent<SpeechIO>();
+            var logger = sys.AddComponent<SessionLogger>();
+
+            var dash = new GameObject("NavDashboard").AddComponent<NavDashboard>();
+            dash.sliceShader = Shader.Find("SeptoMentor/CtSlice");
+            dash.transform.position = new Vector3(-0.25f, 1.55f, 0.75f);
+
+            var nav = sys.AddComponent<NavigationApp>();
+            nav.ghostShader = Shader.Find("SeptoMentor/NavGhost");
+            nav.markerShader = Shader.Find("SeptoMentor/NavMarker");
+            nav.dashboard = dash; nav.ai = ai; nav.speech = speech; nav.logger = logger;
+            nav.head = cam.transform; nav.trackingOrigin = cam.transform.parent;
+            ai.contextSource = nav;
+
+            EditorSceneManager.SaveScene(scene, NavigationPath);
+            Debug.Log("[SeptoMentor] Scene generated: " + NavigationPath);
         }
 
         /// <summary>Shaders created via code at runtime must be in the build.</summary>

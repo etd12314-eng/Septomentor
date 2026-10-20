@@ -91,3 +91,11 @@ def test_rate_limit(monkeypatch):
 def test_empty_question_rejected(monkeypatch):
     _, c, _ = make_app(monkeypatch)
     assert c.post("/v1/ask", headers=H, json={"question": "  "}).status_code == 400
+
+
+def test_scene_includes_navigation_context(monkeypatch):
+    server, _, _ = make_app(monkeypatch)
+    ctx = server.Context(mode="xr_navigation", navigation="registration_error=2.1mm; tip in L-strut zone")
+    scene = server._scene(ctx)
+    assert "mode=xr_navigation" in scene and "L-strut zone" in scene
+    assert "navigation=" not in server._scene(server.Context())

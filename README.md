@@ -6,7 +6,60 @@ Educational AR/VR mentor for ENT residents learning endoscopic septoplasty, buil
 > Structure labels are **not validated anatomy**. The app shows them with a `?` and an
 > "UNVALIDATED LABELS" banner until a validated model is plugged in.
 
-## What it does
+The APK starts in a **menu**: **A = XR Navigation** (operating room, passthrough, patient CT),
+**B = VR Training** (the endoscopy simulator below). In any mode, hold **both grips for 2 s** to return.
+
+## XR Navigation (operating room)
+
+> **Research prototype, not a certified navigation system.** Quest controller tracking plus
+> landmark registration typically leaves several millimetres of error, and tracking can be
+> re-centred by the headset. Use it on phantoms / mannequins first; any use on patients needs
+> ethics and regulatory approval, and decisions are always made on direct anatomy.
+
+Passthrough (Meta OpenXR `Camera (Passthrough)` feature) shows the real room; the patient's CT
+is overlaid on the patient's face after registration.
+
+| Step | What the surgeon does |
+|---|---|
+| 1. Case | Right stick picks a case, **A** loads it. `Phantom (synthetic)` is a generated head CT (septum deviated to the patient's right, turbinates, skull base) for rehearsal without patient data. |
+| 2. Pointer calibration | Tip of the right controller (or a stylus fixed to it) in a divot, **hold trigger** and pivot ~5 s. Saved on the headset. |
+| 3. Plan landmarks | Only if the CT has no landmarks: aim the controller ray at the floating CT skin and pull the trigger for each missing landmark. |
+| 4. Registration | Touch nasion, nose tip, subnasale, both inner eye corners with the tip (trigger each). Shows the fiducial registration error. |
+| 5. Surface refinement | Hold trigger and stroke dorsum / forehead / cheeks; **A** runs ICP onto the CT skin. |
+| 6. Verify | Live tip-to-CT-skin distance while touching the face. **A** accept, **B** redo. |
+| Navigation | Septoplasty phases (A next, B back) with checklists, CT slices (axial / coronal / sagittal) through the tip, overlay of septum / bone / L-strut band, warnings (inside the 10 mm L-strut during resection, skull-base clearance, tracking re-centred), step times and warnings per phase, AI feedback, debrief. |
+
+Other controls: **X** overlay mode, **left trigger** CT window (bone / soft tissue), **Y** ask the
+AI, **right stick click** move the panel in front of you, **hold left grip + sticks** nudge the
+registration.
+
+### Loading a patient CT
+Copy one folder per case to the headset (SideQuest file manager or `adb push`):
+
+```
+adb push MyCase /sdcard/Android/data/org.septomentor.app/files/Cases/MyCase
+```
+
+A case folder contains either an **uncompressed DICOM CT series** (compressed series: re-save
+uncompressed, e.g. `gdcmconv --raw`, or export NRRD) or a **`.nrrd`** volume saved from 3D Slicer.
+Optional extras:
+- `*.mrk.json` 3D Slicer point markups with labels `Nasion`, `Pronasale`, `Subnasale`,
+  `Endocanthion R`, `Endocanthion L` (registration), `SeptumASA`, `SeptumDorsal`, `SeptumANS`
+  (corners of the L-strut: anterior septal angle, dorsal end, caudal-inferior end) and `SkullBase`.
+  Without them the app auto-detects the nose tip and asks for the rest on the CT model.
+- `*.obj` segment meshes exported from Slicer in LPS millimetres, shown as overlays.
+
+Large volumes are halved to at most 256 voxels per axis on the headset. Data stays on the headset;
+the AI proxy only receives text (phase, distances, registration error), never images or identifiers.
+
+| Layer | File |
+|---|---|
+| Volume, loaders, phantom | `Scripts/Nav/CtVolume.cs`, `DicomLoader.cs`, `NrrdLoader.cs`, `CtPhantom.cs`, `CaseLoader.cs` |
+| Surfaces | `Scripts/Nav/SurfaceNets.cs` (skin at -300 HU, bone at +300 HU, label meshes) |
+| Registration | `Scripts/Nav/Registration.cs` (Horn paired-point, ICP, pivot calibration) |
+| Flow, rules, AI context | `Scripts/Nav/NavigationApp.cs`, `NavDashboard.cs`, `Shaders/CtSlice.shader` |
+
+## VR Training simulator
 
 | Layer | File | Notes |
 |---|---|---|
