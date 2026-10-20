@@ -1,0 +1,7 @@
+{
+  "rules": [
+    { "nameContains": "Segment_1", "structure": 1, "confirmed": false },
+    { "nameContains": "Segment_2", "structure": 15, "confirmed": false }
+  ],
+  "fallback": 15
+}

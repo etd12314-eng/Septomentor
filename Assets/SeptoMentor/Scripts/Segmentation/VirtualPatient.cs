@@ -1,0 +1,172 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace SeptoMentor
+{
+    /// <summary>
+    /// The virtual nasal anatomy the synthetic endoscope flies through.
+    /// Uses the imported Slicer OBJ (Segmentation-1.obj) if assigned; otherwise builds
+    /// a crude PROCEDURAL PLACEHOLDER so the app runs without patient-derived data.
+    /// Lives far from the user (see SceneBuilder) so the headset camera never sees it.
+    /// Convention for the placeholder: +X right (lateral), +Y superior, +Z posterior, metres.
+    /// </summary>
+    public class VirtualPatient : MonoBehaviour
+    {
+        [Tooltip("Imported Segmentation-1.obj (model prefab). Null = procedural placeholder.")]
+        public GameObject objModel;
+
+        public Shader tissueShader;
+        public LabelMapping mapping = new LabelMapping();
+
+        [Tooltip("Endoscope path in this object's local space (auto-filled if both are zero).")]
+        public Vector3 pathStart, pathEnd;
+
+        public bool UsingPlaceholderGeometry { get; private set; }
+        public bool AllMappingsConfirmed { get; private set; }
+        public Transform AnatomyRoot { get; private set; }
+        public readonly List<AnatomyPart> Parts = new List<AnatomyPart>();
+        public Bounds LocalBounds { get; private set; }
+
+        Material _tissueMat;
+
+        public void Build()
+        {
+            if (AnatomyRoot != null) return;
+            _tissueMat = new Material(tissueShader != null ? tissueShader : Shader.Find("SeptoMentor/EndoTissue")) { name = "EndoTissue" };
+            AnatomyRoot = new GameObject("Anatomy").transform;
+            AnatomyRoot.SetParent(transform, false);
+
+            if (objModel != null) BuildFromObj();
+            else BuildPlaceholder();
+
+            ComputeBounds();
+            if (pathStart == Vector3.zero && pathEnd == Vector3.zero) AutoPath();
+        }
+
+        void BuildFromObj()
+        {
+            UsingPlaceholderGeometry = false;
+            var inst = Instantiate(objModel, AnatomyRoot, false);
+            inst.name = objModel.name;
+            bool allConfirmed = true;
+            foreach (var r in inst.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var s = mapping.Resolve(r.gameObject.name, out bool confirmed);
+                allConfirmed &= confirmed;
+                AddPart(r.gameObject, s, confirmed);
+                if (r.GetComponent<Collider>() == null)
+                    r.gameObject.AddComponent<MeshCollider>().sharedMesh = r.GetComponent<MeshFilter>().sharedMesh;
+                Debug.Log($"[SeptoMentor] OBJ segment '{r.gameObject.name}' -> {s} (confirmed={confirmed})");
+            }
+            AllMappingsConfirmed = allConfirmed;
+        }
+
+        void BuildPlaceholder()
+        {
+            UsingPlaceholderGeometry = true;
+            AllMappingsConfirmed = false;   // placeholder geometry is never validated anatomy
+
+            // Septum (x ~ 0), anterior (z-) to posterior (z+).
+            Box("CaudalSeptum", Structure.CaudalSeptum, new Vector3(0, 0.0f, -0.029f), new Vector3(0.003f, 0.030f, 0.006f));
+            Box("SeptalCartilage", Structure.SeptalCartilage, new Vector3(0, 0.003f, -0.013f), new Vector3(0.0028f, 0.030f, 0.026f));
+            Box("PerpendicularPlate", Structure.PerpendicularPlate, new Vector3(0, 0.010f, 0.015f), new Vector3(0.0025f, 0.020f, 0.030f));
+            Box("Vomer", Structure.Vomer, new Vector3(0, -0.009f, 0.015f), new Vector3(0.0025f, 0.018f, 0.030f));
+            Box("MaxillaryCrest", Structure.MaxillaryCrest, new Vector3(0, -0.0155f, -0.013f), new Vector3(0.006f, 0.005f, 0.026f));
+            // Partly elevated right flap: offset laterally so the bluish-white cartilage shows behind it.
+            Box("MucoperichondrialFlap", Structure.MucoperichondrialFlap, new Vector3(0.0032f, 0.004f, -0.019f), new Vector3(0.0005f, 0.022f, 0.012f), Quaternion.Euler(0, -12f, 0));
+            Box("NasalFloor", Structure.NasalFloor, new Vector3(0, -0.0195f, 0), new Vector3(0.030f, 0.002f, 0.070f));
+            Capsule("InferiorTurbinate_R", Structure.InferiorTurbinate, new Vector3(0.0115f, -0.012f, 0.004f), 0.0045f, 0.045f);
+            Capsule("InferiorTurbinate_L", Structure.InferiorTurbinate, new Vector3(-0.0115f, -0.012f, 0.004f), 0.0045f, 0.045f);
+            Capsule("MiddleTurbinate_R", Structure.MiddleTurbinate, new Vector3(0.0100f, 0.007f, 0.014f), 0.0032f, 0.032f);
+            Capsule("MiddleTurbinate_L", Structure.MiddleTurbinate, new Vector3(-0.0100f, 0.007f, 0.014f), 0.0032f, 0.032f);
+            Box("LateralWall_R (placeholder bone)", Structure.SinonasalBone, new Vector3(0.016f, 0, 0.005f), new Vector3(0.002f, 0.042f, 0.070f));
+            Box("LateralWall_L (placeholder bone)", Structure.SinonasalBone, new Vector3(-0.016f, 0, 0.005f), new Vector3(0.002f, 0.042f, 0.070f));
+            Box("Roof (placeholder bone)", Structure.SinonasalBone, new Vector3(0, 0.0215f, 0.005f), new Vector3(0.034f, 0.002f, 0.070f));
+        }
+
+        GameObject Box(string name, Structure s, Vector3 pos, Vector3 size, Quaternion? rot = null)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = name;
+            go.transform.SetParent(AnatomyRoot, false);
+            go.transform.localPosition = pos;
+            go.transform.localRotation = rot ?? Quaternion.identity;
+            go.transform.localScale = size;
+            AddPart(go, s, false);
+            return go;
+        }
+
+        GameObject Capsule(string name, Structure s, Vector3 pos, float radius, float length)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            go.name = name;
+            go.transform.SetParent(AnatomyRoot, false);
+            go.transform.localPosition = pos;
+            go.transform.localRotation = Quaternion.Euler(90, 0, 0);   // long axis along Z
+            go.transform.localScale = new Vector3(radius * 2, length * 0.5f, radius * 2);
+            AddPart(go, s, false);
+            return go;
+        }
+
+        public AnatomyPart AddPart(GameObject go, Structure s, bool confirmed)
+        {
+            var r = go.GetComponent<Renderer>();
+            r.sharedMaterial = _tissueMat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            var p = go.GetComponent<AnatomyPart>();
+            if (p == null) p = go.AddComponent<AnatomyPart>();
+            p.structure = s;
+            p.mappingConfirmed = confirmed;
+            p.tissueColor = AnatomyPart.DefaultTint(s);
+            p.Apply();
+            Parts.Add(p);
+            return p;
+        }
+
+        public Material TissueMaterial => _tissueMat;
+
+        void ComputeBounds()
+        {
+            bool any = false; var b = new Bounds();
+            var inv = transform.worldToLocalMatrix;
+            foreach (var p in Parts)
+            {
+                var wb = p.Rend.bounds;
+                var c = inv.MultiplyPoint3x4(wb.center);
+                var e = Vector3.Scale(wb.extents, Abs(transform.lossyScale.Reciprocal()));
+                var lb = new Bounds(c, e * 2);
+                if (!any) { b = lb; any = true; } else b.Encapsulate(lb);
+            }
+            LocalBounds = b;
+        }
+
+        void AutoPath()
+        {
+            if (UsingPlaceholderGeometry)
+            {
+                // Right nasal cavity, between septum/flap and inferior turbinate, looking posteriorly.
+                pathStart = new Vector3(0.0065f, -0.002f, -0.045f);
+                pathEnd = new Vector3(0.0055f, -0.002f, 0.012f);
+                return;
+            }
+            // Unknown orientation: fly along the longest bounds axis, offset off-centre on the shortest.
+            var b = LocalBounds; var e = b.extents;
+            int longAxis = e.x >= e.y && e.x >= e.z ? 0 : (e.y >= e.z ? 1 : 2);
+            int shortAxis = e.x <= e.y && e.x <= e.z ? 0 : (e.y <= e.z ? 1 : 2);
+            var dir = Vector3.zero; dir[longAxis] = 1;
+            var off = Vector3.zero; off[shortAxis] = e[shortAxis] * 1.6f;   // outside the thin septum
+            pathStart = b.center - dir * e[longAxis] * 1.3f + off;
+            pathEnd = b.center + dir * e[longAxis] * 0.3f + off;
+            Debug.LogWarning("[SeptoMentor] Endoscope path auto-derived from mesh bounds; set pathStart/pathEnd on VirtualPatient for a realistic fly-through.");
+        }
+
+        static Vector3 Abs(Vector3 v) => new Vector3(Mathf.Abs(v.x), Mathf.Abs(v.y), Mathf.Abs(v.z));
+    }
+
+    static class VecExt
+    {
+        public static Vector3 Reciprocal(this Vector3 v) =>
+            new Vector3(v.x != 0 ? 1f / v.x : 0, v.y != 0 ? 1f / v.y : 0, v.z != 0 ? 1f / v.z : 0);
+    }
+}

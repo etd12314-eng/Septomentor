@@ -1,0 +1,35 @@
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+*.csproj
+*.sln
+*.unityproj
+*.user
+*.pidb
+*.booproj
+*.apk
+*.aab
+.vs/
+.idea/
+.vscode/
+sysinfo.txt
+crashlytics-build.properties
+
+# Build-time secrets (written by BuildScript from env)
+/Assets/SeptoMentor/Resources/mentor_config.json
+/Assets/SeptoMentor/Resources/mentor_config.json.meta
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Session logs pulled from the headset (may contain clinical context)
+/sessions/
