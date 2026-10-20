@@ -33,3 +33,6 @@ __pycache__/
 
 # Session logs pulled from the headset (may contain clinical context)
 /sessions/
+
+# Local deliverable archive
+/SeptoMentor.zip
