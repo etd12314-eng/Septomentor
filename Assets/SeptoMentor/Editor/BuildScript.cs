@@ -50,7 +50,7 @@ namespace SeptoMentor.EditorTools
             if (string.IsNullOrEmpty(PlayerSettings.bundleVersion) || PlayerSettings.bundleVersion == "1.0") PlayerSettings.bundleVersion = "0.1.0";
             PlayerSettings.SetScriptingBackend(android, ScriptingImplementation.IL2CPP);
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
-            PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel29;
+            PlayerSettings.Android.minSdkVersion = (AndroidSdkVersions)32;   // Android 12L: required by Meta Quest Camera (Passthrough)
             PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
             PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { GraphicsDeviceType.Vulkan });
             PlayerSettings.colorSpace = ColorSpace.Linear;
