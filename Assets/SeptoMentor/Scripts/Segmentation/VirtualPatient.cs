@@ -20,6 +20,8 @@ namespace SeptoMentor
 
         [Tooltip("Endoscope path in this object's local space (auto-filled if both are zero).")]
         public Vector3 pathStart, pathEnd;
+        [Tooltip("Scope yaw off the path direction, deg (+ = toward +X). Auto-set with the path.")]
+        public float scopeYaw;
 
         public bool UsingPlaceholderGeometry { get; private set; }
         public bool AllMappingsConfirmed { get; private set; }
@@ -148,9 +150,11 @@ namespace SeptoMentor
                 // Right nasal cavity, between septum/flap and inferior turbinate, looking posteriorly.
                 pathStart = new Vector3(0.0065f, -0.002f, -0.045f);
                 pathEnd = new Vector3(0.0055f, -0.002f, 0.012f);
+                scopeYaw = -14f;
                 return;
             }
-            // Unknown orientation: fly along the longest bounds axis, offset off-centre on the shortest.
+            if (SeptumPath()) return;
+            // Unknown anatomy: fly along the longest bounds axis, offset off-centre on the shortest.
             var b = LocalBounds; var e = b.extents;
             int longAxis = e.x >= e.y && e.x >= e.z ? 0 : (e.y >= e.z ? 1 : 2);
             int shortAxis = e.x <= e.y && e.x <= e.z ? 0 : (e.y <= e.z ? 1 : 2);
@@ -158,7 +162,33 @@ namespace SeptoMentor
             var off = Vector3.zero; off[shortAxis] = e[shortAxis] * 1.6f;   // outside the thin septum
             pathStart = b.center - dir * e[longAxis] * 1.3f + off;
             pathEnd = b.center + dir * e[longAxis] * 0.3f + off;
+            scopeYaw = 0f;
             Debug.LogWarning("[SeptoMentor] Endoscope path auto-derived from mesh bounds; set pathStart/pathEnd on VirtualPatient for a realistic fly-through.");
+        }
+
+        /// <summary>
+        /// Prepared OBJs use +X patient-left, +Y superior, +Z posterior (tools/prepare_obj.py).
+        /// Enter the patient's right nostril just in front of the septal segment and run back
+        /// along the septum's -X face, ending ~9 mm behind it. Checked on Segmentation-1.obj:
+        /// at least 2.4 mm clearance from all mesh vertices along the whole path.
+        /// </summary>
+        bool SeptumPath()
+        {
+            bool any = false; var sb = new Bounds();
+            var inv = transform.worldToLocalMatrix;
+            foreach (var p in Parts)
+            {
+                if (p.structure != Structure.SeptalCartilage && p.structure != Structure.CaudalSeptum) continue;
+                var c = inv.MultiplyPoint3x4(p.Rend.bounds.center);
+                var lb = new Bounds(c, Vector3.Scale(p.Rend.bounds.size, Abs(transform.lossyScale.Reciprocal())));
+                if (!any) { sb = lb; any = true; } else sb.Encapsulate(lb);
+            }
+            if (!any) return false;
+            pathStart = new Vector3(sb.min.x - 0.004f, sb.center.y + 0.004f, sb.min.z - 0.003f);
+            pathEnd = new Vector3(sb.min.x + 0.002f, sb.center.y - 0.004f, sb.max.z + 0.009f);
+            scopeYaw = 6f;   // slightly toward the septum
+            Debug.Log($"[SeptoMentor] Endoscope path along the septum: {pathStart * 1000f} -> {pathEnd * 1000f} mm");
+            return true;
         }
 
         static Vector3 Abs(Vector3 v) => new Vector3(Mathf.Abs(v.x), Mathf.Abs(v.y), Mathf.Abs(v.z));

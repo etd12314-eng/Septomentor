@@ -51,14 +51,21 @@ namespace SeptoMentor
         static void Edge(InputDevice d, InputFeatureUsage<bool> usage, ref bool prev, Action a)
         {
             bool now = d.isValid && d.TryGetFeatureValue(usage, out bool v) && v;
-            if (now && !prev) a?.Invoke();
+            if (now && !prev) { a?.Invoke(); Tick(d); }
             prev = now;
+        }
+
+        /// <summary>Short haptic click so every press is confirmed, even when nothing visible changes.</summary>
+        static void Tick(InputDevice d)
+        {
+            if (d.TryGetHapticCapabilities(out var caps) && caps.supportsImpulse) d.SendHapticImpulse(0, 0.3f, 0.03f);
         }
 
         static void EdgeTrigger(InputDevice d, ref bool prev, Action a)
         {
-            bool now = d.isValid && d.TryGetFeatureValue(CommonUsages.trigger, out float v) && v > 0.7f;
-            if (now && !prev) a?.Invoke();
+            // Hysteresis: press above 0.7, release below 0.5, so a half-held trigger can't double-fire.
+            bool now = d.isValid && d.TryGetFeatureValue(CommonUsages.trigger, out float v) && v > (prev ? 0.5f : 0.7f);
+            if (now && !prev) { a?.Invoke(); Tick(d); }
             prev = now;
         }
 

@@ -64,11 +64,24 @@ namespace SeptoMentor
             };
 
             overlay.SetPhase(PhaseLine(mentor.Phase, true));
+            overlay.ShowSidePanel(ControlsCard());
             Invoke(nameof(DoRecenter), 0.5f);   // after the first HMD pose arrives
         }
 
-        static string PhaseLine(SurgicalPhase p, bool manual) =>
-            $"Phase: {p}{(manual ? "" : " (auto)")}   [A next  B instrument  X recenter  Y ask]";
+        string PhaseLine(SurgicalPhase p, bool manual) =>
+            $"Phase: {p}{(manual ? "" : " (auto)")}   [A next  B instrument  X recenter{(ai.Configured ? "  Y ask" : "")}]";
+
+        string ControlsCard() =>
+            "Controls\n" +
+            "A  next phase\n" +
+            "B  change instrument\n" +
+            "X  recenter view\n" +
+            (ai.Configured ? "Y  ask the AI mentor\n" : "Y  (AI mentor off in this build)\n") +
+            "Right stick  look around\n" +
+            "Hold right grip + stick  twist instrument\n" +
+            "Left stick  advance / withdraw scope\n" +
+            "Right trigger  labels on/off\n" +
+            "Left trigger  simulate mucosal tear";
 
         void Update()
         {
@@ -92,6 +105,7 @@ namespace SeptoMentor
         void OnAsk()
         {
             logger.Log("input", mentor.Phase.ToString(), null, null, "Y: ask AI");
+            if (!ai.Configured) { overlay.ShowMentor("AI mentor is off in this build (no proxy endpoint).", Severity.Info, 3f); return; }
             if (speech.StartListening()) { overlay.ShowAI("Listening..."); return; }
             speech.OnTranscription(defaultQuestion);   // no recognizer wired: canned question
         }

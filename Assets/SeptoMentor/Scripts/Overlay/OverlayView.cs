@@ -35,7 +35,8 @@ namespace SeptoMentor
         static readonly int OutlineId = Shader.PropertyToID("_Outline");
         float _mentorUntil;
 
-        void Start()
+        // Awake, not Start: SeptoMentorApp.Start writes to these labels and Start order is undefined.
+        void Awake()
         {
             transform.localScale = Vector3.one * 0.01f;
 
@@ -125,6 +126,9 @@ namespace SeptoMentor
         }
 
         public void ShowAI(string text) => _ai.Set("AI mentor (training aid):\n" + text, new Color(0.75f, 0.85f, 1f));
+
+        /// <summary>Side panel text when there is no AI answer to show (e.g. the controls card).</summary>
+        public void ShowSidePanel(string text) => _ai.Set(text, new Color(0.85f, 0.88f, 0.92f));
 
         public void ToggleLabels() => showLabels = !showLabels;
     }

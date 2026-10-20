@@ -24,8 +24,6 @@ namespace SeptoMentor
 
         [Header("Fly-through")]
         public float pathCycleSeconds = 40f;
-        [Tooltip("Yaw toward the septum (deg; negative = toward -X).")]
-        public float yawBias = -14f;
         public float swayMeters = 0.0008f;
 
         [Header("Manual (thumbstick)")]
@@ -52,7 +50,7 @@ namespace SeptoMentor
         readonly SegmentationFrame[] _pool = new SegmentationFrame[3];
         int _poolIdx, _frameIdx;
         bool _readbackPending;
-        float _nextRender, _u, _manualUntil;
+        float _nextRender, _u, _manualUntil, _autoDir = 1f;
 
         protected override void Awake()
         {
@@ -128,13 +126,18 @@ namespace SeptoMentor
             if (Time.time < _manualUntil)
                 _u = Mathf.Clamp01(_u + manualAdvance * Time.deltaTime * 0.01f / len);
             else
-                _u = Mathf.PingPong(Time.time / Mathf.Max(1f, pathCycleSeconds) * 2f, 1f);
+            {
+                // Resume the back-and-forth from wherever the resident left the scope (no jump).
+                _u += _autoDir * Time.deltaTime * 2f / Mathf.Max(1f, pathCycleSeconds);
+                if (_u >= 1f) { _u = 1f; _autoDir = -1f; }
+                else if (_u <= 0f) { _u = 0f; _autoDir = 1f; }
+            }
 
             var dir = (patient.pathEnd - patient.pathStart).normalized;
             var sway = new Vector3(Mathf.Sin(Time.time * 0.7f), Mathf.Sin(Time.time * 0.53f + 1f), 0) * swayMeters;
             _rig.localPosition = Vector3.Lerp(patient.pathStart, patient.pathEnd, _u) + sway;
 
-            float yaw = yawBias + manualLook.x * 35f;
+            float yaw = patient.scopeYaw + manualLook.x * 35f;
             float pitch = -manualLook.y * 25f;
             _rig.localRotation = Quaternion.LookRotation(dir, Vector3.up) * Quaternion.Euler(pitch, yaw, 0);
         }
