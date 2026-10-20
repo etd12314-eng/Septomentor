@@ -21,6 +21,7 @@ namespace SeptoMentor.EditorTools
             "com.unity.openxr.feature.input.oculustouch",    // Oculus Touch controller profile
             "com.unity.openxr.feature.arfoundation-meta-session",   // Meta Quest: Session (AR Foundation)
             "com.unity.openxr.feature.arfoundation-meta-camera",    // Meta Quest: Camera (Passthrough)
+            "com.unity.openxr.feature.compositionlayers",           // required by the passthrough layer
         };
 
         [MenuItem("SeptoMentor/Configure OpenXR (Android)")]
