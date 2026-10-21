@@ -74,8 +74,8 @@ Shader "SeptoMentor/CtSlice"
                 {
                     float2 d = abs(i.uv - 0.5);
                     float w = 0.004;
-                    bool line = (d.x < w && d.y > 0.03 && d.y < 0.12) || (d.y < w && d.x > 0.03 && d.x < 0.12);
-                    if (line) col = _Cross.rgb;
+                    bool onCross = (d.x < w && d.y > 0.03 && d.y < 0.12) || (d.y < w && d.x > 0.03 && d.x < 0.12);
+                    if (onCross) col = _Cross.rgb;
                 }
                 float2 e = min(i.uv, 1 - i.uv);
                 if (min(e.x, e.y) < 0.006) col = float3(0.35, 0.4, 0.5);   // frame

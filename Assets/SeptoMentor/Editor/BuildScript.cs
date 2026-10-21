@@ -88,7 +88,9 @@ namespace SeptoMentor.EditorTools
 
         /// <summary>
         /// TextMeshPro's default font and settings ship as a .unitypackage inside com.unity.ugui; without
-        /// them Label3D falls back to blurry legacy TextMesh. Imported at build time when missing.
+        /// them Label3D falls back to blurry legacy TextMesh. AssetDatabase.ImportPackage is deferred in
+        /// batch mode (too late for this build), so the package (a gzipped tar of guid folders holding
+        /// "pathname", "asset", "asset.meta") is unpacked directly into the project instead.
         /// </summary>
         static void ImportTmpEssentials()
         {
@@ -96,12 +98,53 @@ namespace SeptoMentor.EditorTools
             var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(TMPro.TextMeshPro).Assembly);
             var pkg = info != null ? Path.Combine(info.resolvedPath, "Package Resources", "TMP Essential Resources.unitypackage") : null;
             if (pkg == null || !File.Exists(pkg)) { Debug.LogWarning("[SeptoMentor] TMP Essential Resources not found; legacy text will be used."); return; }
-            AssetDatabase.ImportPackage(pkg, false);
-            AssetDatabase.Refresh();
-            Debug.Log("[SeptoMentor] TMP Essential Resources imported: " + (AssetDatabase.FindAssets("t:TMP_Settings").Length > 0 ? "ok" : "pending"));
+            try
+            {
+                var entries = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, byte[]>>();
+                using (var gz = new System.IO.Compression.GZipStream(File.OpenRead(pkg), System.IO.Compression.CompressionMode.Decompress))
+                {
+                    var header = new byte[512];
+                    while (ReadFull(gz, header) == 512)
+                    {
+                        string name = System.Text.Encoding.ASCII.GetString(header, 0, 100).Split('\0')[0];
+                        if (name.Length == 0) break;
+                        string octal = System.Text.Encoding.ASCII.GetString(header, 124, 12).Trim('\0', ' ');
+                        long size = octal.Length > 0 ? Convert.ToInt64(octal, 8) : 0;
+                        var data = new byte[size];
+                        ReadFull(gz, data);
+                        long pad = (512 - size % 512) % 512;
+                        if (pad > 0) ReadFull(gz, new byte[pad]);
+                        if (header[156] != (byte)'0' && header[156] != 0) continue;   // regular files only
+                        var parts = name.TrimStart('.', '/').Split('/');
+                        if (parts.Length != 2) continue;
+                        if (!entries.TryGetValue(parts[0], out var e)) entries[parts[0]] = e = new System.Collections.Generic.Dictionary<string, byte[]>();
+                        e[parts[1]] = data;
+                    }
+                }
+                int n = 0;
+                foreach (var e in entries.Values)
+                {
+                    if (!e.TryGetValue("pathname", out var pn) || !e.TryGetValue("asset", out var asset)) continue;
+                    string path = System.Text.Encoding.UTF8.GetString(pn).Split('\n')[0].Trim();
+                    Directory.CreateDirectory(Path.GetDirectoryName(path));
+                    File.WriteAllBytes(path, asset);
+                    if (e.TryGetValue("asset.meta", out var meta)) File.WriteAllBytes(path + ".meta", meta);
+                    n++;
+                }
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                Debug.Log($"[SeptoMentor] TMP Essential Resources unpacked ({n} files): " + (AssetDatabase.FindAssets("t:TMP_Settings").Length > 0 ? "ok" : "settings asset missing"));
+            }
+            catch (Exception ex) { Debug.LogWarning("[SeptoMentor] TMP Essential Resources unpack failed: " + ex.Message); }
         }
 
-                static string Arg(string name)
+        static int ReadFull(Stream s, byte[] buf)
+        {
+            int got = 0;
+            while (got < buf.Length) { int r = s.Read(buf, got, buf.Length - got); if (r <= 0) break; got += r; }
+            return got;
+        }
+
+        static string Arg(string name)
         {
             var args = Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++) if (args[i] == name) return args[i + 1];
