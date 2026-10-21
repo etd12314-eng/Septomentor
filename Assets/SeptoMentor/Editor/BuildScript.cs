@@ -57,6 +57,10 @@ namespace SeptoMentor.EditorTools
             PlayerSettings.colorSpace = ColorSpace.Linear;
             PlayerSettings.Android.forceInternetPermission = true;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+            // 4x MSAA in every quality level (set here, never at runtime: see ModeSwitch.SetEyeResolution).
+            int current = QualitySettings.GetQualityLevel();
+            for (int i = 0; i < QualitySettings.names.Length; i++) { QualitySettings.SetQualityLevel(i, false); QualitySettings.antiAliasing = 4; }
+            QualitySettings.SetQualityLevel(current, false);
             EditorUserBuildSettings.exportAsGoogleAndroidProject = false;
             EditorUserBuildSettings.buildAppBundle = false;
             // No keystore configured -> Unity signs with the debug key.

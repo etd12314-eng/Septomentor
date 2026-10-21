@@ -1,7 +1,6 @@
 using System.Threading.Tasks;
 using SeptoMentor.Nav;
 using UnityEngine;
-using UnityEngine.XR;
 
 namespace SeptoMentor
 {
@@ -15,8 +14,6 @@ namespace SeptoMentor
     public class OperatingRoom : MonoBehaviour
     {
         public Shader surfaceShader;
-        [Tooltip("XR eye-buffer scale (1 = runtime default). Higher = sharper, more GPU.")]
-        public float eyeResolutionScale = 1.3f;
 
         /// <summary>Where the video monitor's centre goes (top of the endoscopy tower, across the table).</summary>
         public static readonly Vector3 MonitorPosition = new Vector3(0.25f, 1.62f, 1.18f);
@@ -35,9 +32,6 @@ namespace SeptoMentor
 
         void Awake()
         {
-            XRSettings.eyeTextureResolutionScale = eyeResolutionScale;
-            QualitySettings.antiAliasing = 4;
-
             _root = new GameObject("Room").transform;
             _root.SetParent(transform, false);
             BuildRoom();

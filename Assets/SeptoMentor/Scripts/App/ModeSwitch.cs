@@ -22,11 +22,16 @@ namespace SeptoMentor
         bool _a, _b;
         float _gripsSince = -1;
 
+        /// <summary>
+        /// Sharper eye buffers, set ONCE before the first scene renders. Changing the scale (or MSAA,
+        /// which is set at build time in the quality settings) while a scene is loading makes the
+        /// runtime rebuild its swapchains and could crash the VR scene on Quest.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void SetEyeResolution() => XRSettings.eyeTextureResolutionScale = 1.25f;
+
         void Start()
         {
-            // Sharper eye buffers + 4x MSAA everywhere (the operating room sets its own, higher scale).
-            if (FindAnyObjectByType<OperatingRoom>() == null) XRSettings.eyeTextureResolutionScale = 1.2f;
-            QualitySettings.antiAliasing = 4;
             if (!isLauncher) return;
             transform.localScale = Vector3.one * 0.01f;
             _title = new Label3D(transform, "Title", 22);

@@ -71,9 +71,7 @@ namespace SeptoMentor
             _parts.AddRange(patient.Parts);
             _labelMat = new Material(labelShader != null ? labelShader : Shader.Find("SeptoMentor/LabelId")) { name = "LabelId" };
 
-            // Mipmapped + anisotropic so the monitor stays crisp (not shimmering) when seen from a distance.
-            _videoRT = new RenderTexture(videoSize, videoSize, 24, RenderTextureFormat.ARGB32)
-            { name = "EndoVideo", antiAliasing = 4, useMipMap = true, autoGenerateMips = true, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
+            _videoRT = new RenderTexture(videoSize, videoSize, 24, RenderTextureFormat.ARGB32) { name = "EndoVideo", antiAliasing = 4 };
             var labelFmt = SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.R8) ? RenderTextureFormat.R8 : RenderTextureFormat.ARGB32;
             _labelRT = new RenderTexture(LabelSize, LabelSize, 24, labelFmt, RenderTextureReadWrite.Linear)
             { name = "EndoLabels", antiAliasing = 1, filterMode = FilterMode.Point };
