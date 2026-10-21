@@ -16,7 +16,8 @@ namespace SeptoMentor
         public Shader labelShader;
 
         [Header("Endoscope")]
-        public int videoSize = 1024;
+        [Tooltip("Endoscope video, px (square). Rendered with 4x MSAA, then resolved into a mipmapped texture for the monitor.")]
+        public int videoSize = 1280;
         [Tooltip("Vertical FOV, deg. 0-degree rigid scopes are roughly 70-90 deg diagonal.")]
         public float fieldOfView = 75f;
         [Tooltip("Label pass + readback rate; the video itself renders every frame up to videoFps.")]
@@ -44,11 +45,11 @@ namespace SeptoMentor
         public Vector3 ScopeLocalPosition => patient.transform.InverseTransformPoint(_endoCam.transform.position);
         public Vector3 ScopeLocalForward => patient.transform.InverseTransformDirection(_endoCam.transform.forward);
 
-        public override Texture VideoTexture => _videoRT;
+        public override Texture VideoTexture => _videoTex;
         public override bool IsSimulation => true;
         public override bool LabelsValidated => false;   // synthetic labels are never validated anatomy
 
-        RenderTexture _videoRT, _labelRT;
+        RenderTexture _videoRT, _videoTex, _labelRT;
         Camera _endoCam, _labelCam;
         Transform _rig;
         Material _labelMat;
@@ -72,6 +73,10 @@ namespace SeptoMentor
             _labelMat = new Material(labelShader != null ? labelShader : Shader.Find("SeptoMentor/LabelId")) { name = "LabelId" };
 
             _videoRT = new RenderTexture(videoSize, videoSize, 24, RenderTextureFormat.ARGB32) { name = "EndoVideo", antiAliasing = 4 };
+            // The monitor shows the video smaller than its pixel count (minified): without mipmaps it shimmers and
+            // looks low-res in the headset. MSAA textures cannot have mips, so it is resolved into a second one.
+            _videoTex = new RenderTexture(videoSize, videoSize, 0, RenderTextureFormat.ARGB32)
+            { name = "EndoVideoMips", useMipMap = true, autoGenerateMips = true, filterMode = FilterMode.Trilinear, anisoLevel = 8 };
             var labelFmt = SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.R8) ? RenderTextureFormat.R8 : RenderTextureFormat.ARGB32;
             _labelRT = new RenderTexture(LabelSize, LabelSize, 24, labelFmt, RenderTextureReadWrite.Linear)
             { name = "EndoLabels", antiAliasing = 1, filterMode = FilterMode.Point };
@@ -113,6 +118,7 @@ namespace SeptoMentor
             {
                 _nextVideo = Time.time + 1f / Mathf.Max(1f, videoFps) - 0.002f;
                 _endoCam.Render();
+                Graphics.Blit(_videoRT, _videoTex);   // MSAA resolve + mip chain
             }
             if (Time.time < _nextRender) return;
             _nextRender = Time.time + 1f / Mathf.Max(1f, renderFps);
@@ -199,6 +205,10 @@ namespace SeptoMentor
             Publish(frame);
         }
 
+        /// <summary>Adds a renderer created at runtime (blood, tears) to the label pass.</summary>
+        public void AddLabelPart(AnatomyPart p) { if (p != null && !_parts.Contains(p)) _parts.Add(p); }
+        public void RemoveLabelPart(AnatomyPart p) => _parts.Remove(p);
+
         /// <summary>Spawns a small simulated mucosal tear where the scope axis hits tissue.</summary>
         public bool SimulateTear()
         {
@@ -221,6 +231,7 @@ namespace SeptoMentor
         void OnDestroy()
         {
             if (_videoRT != null) _videoRT.Release();
+            if (_videoTex != null) _videoTex.Release();
             if (_labelRT != null) _labelRT.Release();
         }
     }

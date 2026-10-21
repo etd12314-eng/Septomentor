@@ -11,9 +11,10 @@ namespace SeptoMentor
     /// basal spur, inferior and middle turbinates, nasal floor, narrowing roof, choana and nasopharynx
     /// with Eustachian tori. Built as a signed-distance field (mm) and meshed with SurfaceNets.
     ///
-    /// The septal flap area is made of separate pieces shown per surgical phase: intact mucosa,
-    /// Killian-type incision, elevated mucoperichondrial flap over bluish-white cartilage, resection
-    /// window (keeping a ~10 mm L-strut) with the contralateral mucoperichondrium behind it.
+    /// The septal flap area is made of separate pieces that SeptoplastySim changes as the resident operates:
+    /// Killian-type incision strip (cut segment by segment), mucoperichondrial flap (elevated off the
+    /// bluish-white cartilage at runtime), resection window cartilage (bitten out chunk by chunk, keeping a
+    /// ~10 mm L-strut) with the contralateral mucoperichondrium behind it.
     ///
     /// Frame: the CT phantom's (L, S, P), in metres in the VirtualPatient's local space
     /// (+X patient-left, +Y superior, +Z posterior), so the nostril sits exactly where the OR head's is.
@@ -39,9 +40,11 @@ namespace SeptoMentor
         public static readonly Vector3 PathStart = new Vector3(-7.5f, -25f, -86f) * 0.001f, PathEnd = new Vector3(-8.5f, -2f, -30f) * 0.001f;
 
         // Flap area (S, P mm) on the right septal face, the incision strip in front of it, and the resection window.
-        const float FlapP0 = -71f, FlapP1 = -28f, FlapS0 = -21f, FlapS1 = 17f, IncisionP0 = -72.2f;
-        const float WinP0 = -62f, WinP1 = -36f, WinS0 = -18f, WinS1 = 6f;
-        const float CartilageDepth = 0.9f, ContralateralDepth = 2.6f;
+        public const float FlapP0 = -71f, FlapP1 = -28f, FlapS0 = -21f, FlapS1 = 17f, IncisionP0 = -72.2f;
+        public const float WinP0 = -62f, WinP1 = -36f, WinS0 = -18f, WinS1 = 6f;
+        public const float CartilageDepth = 0.9f, ContralateralDepth = 2.6f;
+        /// <summary>The incision strip is cut segment by segment (along S); the window is resected chunk by chunk.</summary>
+        public const int IncisionSegments = 8, ChunksS = 3, ChunksP = 4;
 
         static readonly Color Mucosa = new Color(0.90f, 0.55f, 0.56f), Turbinate = new Color(0.82f, 0.42f, 0.45f),
                               Floor = new Color(0.88f, 0.52f, 0.52f), Pharynx = new Color(0.78f, 0.38f, 0.40f),
@@ -86,33 +89,48 @@ namespace SeptoMentor
 
         static float Roof(float p) => p < -45 ? Mathf.Min(22f, (p + 80f) * 22f / 35f) : p > -5 ? 22f - (p + 5f) * 0.9f : 22f;
 
-        enum C { Septum, Lateral, Floor, Roof, Vestibule, Pharynx, InfTurb, MidTurb, Torus, Count }
+        public enum Wall { Septum, Lateral, Floor, Roof, Vestibule, Pharynx, InfTurb, MidTurb, Torus, Count }
 
         static void Components(float l, float s, float p, float[] c)
         {
-            c[(int)C.Septum] = l - SeptumFace(s, p);
-            c[(int)C.Lateral] = (-15f + Mathf.Max(0, s - 2) * 0.38f) - l;
+            c[(int)Wall.Septum] = l - SeptumFace(s, p);
+            c[(int)Wall.Lateral] = (-15f + Mathf.Max(0, s - 2) * 0.38f) - l;
             float ant = Mathf.Max(0, -60 - p);
-            c[(int)C.Floor] = -27f + 0.004f * ant * ant - s;
-            c[(int)C.Roof] = s - Roof(p);
-            c[(int)C.Vestibule] = Capsule(new Vector3(l, s, p), new Vector3(-7.4f, -28.6f, -104f), new Vector3(-8f, -19f, -68f), 3.9f, 5.5f);   // runs out of the grid: open nostril
+            c[(int)Wall.Floor] = -27f + 0.004f * ant * ant - s;
+            c[(int)Wall.Roof] = s - Roof(p);
+            c[(int)Wall.Vestibule] = Capsule(new Vector3(l, s, p), new Vector3(-7.4f, -28.6f, -104f), new Vector3(-8f, -19f, -68f), 3.9f, 5.5f);   // runs out of the grid: open nostril
             float np = SMax(SMax(Mathf.Abs(l) - 15f, p - 30f, 4), SMax(-25f - s, s - (14f - (p - 5f) * 0.6f), 4), 4);
-            c[(int)C.Pharynx] = SMax(np, PosteriorEdge(s) - p - 2f, 2);
-            c[(int)C.InfTurb] = SMin(Ell(l, s, p, -15.5f, -17.5f, -20f, 7, 7.5f, 33), Ell(l, s, p, -14.8f, -16f, -44f, 7, 7.8f, 12), 3);
-            c[(int)C.MidTurb] = SMin(Ell(l, s, p, -10.8f, 4f, -15f, 3.3f, 6, 22), Ell(l, s, p, -13f, 11f, -15f, 2, 6, 20), 2);
-            c[(int)C.Torus] = Ell(Mathf.Abs(l), s, p, 14, -8, 20, 4, 6, 6);
+            c[(int)Wall.Pharynx] = SMax(np, PosteriorEdge(s) - p - 2f, 2);
+            c[(int)Wall.InfTurb] = SMin(Ell(l, s, p, -15.5f, -17.5f, -20f, 7, 7.5f, 33), Ell(l, s, p, -14.8f, -16f, -44f, 7, 7.8f, 12), 3);
+            c[(int)Wall.MidTurb] = SMin(Ell(l, s, p, -10.8f, 4f, -15f, 3.3f, 6, 22), Ell(l, s, p, -13f, 11f, -15f, 2, 6, 20), 2);
+            c[(int)Wall.Torus] = Ell(Mathf.Abs(l), s, p, 14, -8, 20, 4, 6, 6);
         }
 
         /// <summary>Signed distance to the airway wall, mm: negative in air, positive in tissue.</summary>
         static float Air(float l, float s, float p, float[] c)
         {
             Components(l, s, p, c);
-            float cav = SMax(SMax(c[(int)C.Septum], c[(int)C.Lateral], 2), SMax(c[(int)C.Floor], c[(int)C.Roof], 2), 2);
+            float cav = SMax(SMax(c[(int)Wall.Septum], c[(int)Wall.Lateral], 2), SMax(c[(int)Wall.Floor], c[(int)Wall.Roof], 2), 2);
             cav = SMax(cav, SMax(-74f - p, p - PosteriorEdge(s), 2), 2);
-            float a = SMin(SMin(cav, c[(int)C.Vestibule], 3), c[(int)C.Pharynx], 3);
-            a = SMax(a, -c[(int)C.InfTurb], 1.5f);
-            a = SMax(a, -c[(int)C.MidTurb], 1.5f);
-            return SMax(a, -c[(int)C.Torus], 2);
+            float a = SMin(SMin(cav, c[(int)Wall.Vestibule], 3), c[(int)Wall.Pharynx], 3);
+            a = SMax(a, -c[(int)Wall.InfTurb], 1.5f);
+            a = SMax(a, -c[(int)Wall.MidTurb], 1.5f);
+            return SMax(a, -c[(int)Wall.Torus], 2);
+        }
+
+        static readonly float[] Scratch = new float[(int)Wall.Count];
+
+        /// <summary>
+        /// Tissue depth at a point (mm, L/S/P): positive inside tissue, negative in air, plus the wall that is closest.
+        /// Main thread only (shared scratch buffer).
+        /// </summary>
+        public static float Depth(Vector3 mm, out Wall wall)
+        {
+            float d = Air(mm.x, mm.y, mm.z, Scratch);
+            int best = 0;
+            for (int i = 1; i < (int)Wall.Count; i++) if (Mathf.Abs(Scratch[i]) < Mathf.Abs(Scratch[best])) best = i;
+            wall = (Wall)best;
+            return d;
         }
 
         // ---------------------------------------------------------------- build
@@ -130,7 +148,7 @@ namespace SeptoMentor
             var min = new Vector3(-19f, -31f, -97f);
             var n = new Vector3Int(Mathf.CeilToInt(35f / stepMm), Mathf.CeilToInt(57f / stepMm), Mathf.CeilToInt(130f / stepMm));
             var toModel = Matrix4x4.TRS(min * 0.001f, Quaternion.identity, Vector3.one * stepMm * 0.001f);
-            var buf = new float[(int)C.Count];
+            var buf = new float[(int)Wall.Count];
             var sn = SurfaceNets.Extract((i, j, k) => Air(min.x + i * stepMm, min.y + j * stepMm, min.z + k * stepMm, buf), 0f,
                                          Vector3Int.zero, n, 1, toModel).Smooth(2);
 
@@ -141,11 +159,11 @@ namespace SeptoMentor
                 var m = (sn.vertices[a] + sn.vertices[b] + sn.vertices[c]) * (1000f / 3f);
                 Components(m.x, m.y, m.z, buf);
                 int best = 0;
-                for (int i = 1; i < (int)C.Count; i++) if (Mathf.Abs(buf[i]) < Mathf.Abs(buf[best])) best = i;
+                for (int i = 1; i < (int)Wall.Count; i++) if (Mathf.Abs(buf[i]) < Mathf.Abs(buf[best])) best = i;
                 Piece pc;
-                switch ((C)best)
+                switch ((Wall)best)
                 {
-                    case C.Septum:
+                    case Wall.Septum:
                         // The flap area is rebuilt below as phase pieces; the cut is a little smaller so they overlap.
                         if (m.z > IncisionP0 + 0.3f && m.z < FlapP1 - 0.3f && m.y > FlapS0 + 0.3f && m.y < FlapS1 - 0.3f) continue;
                         pc = m.z < -72f ? Get("Septum_Caudal", Structure.CaudalSeptum, Mucosa)
@@ -154,11 +172,11 @@ namespace SeptoMentor
                                                        : Get("Septum_Vomer", Structure.Vomer, Mucosa))
                            : Get("Septum_Cartilaginous", Structure.SeptalCartilage, Mucosa);
                         break;
-                    case C.InfTurb: pc = Get("InferiorTurbinate", Structure.InferiorTurbinate, Turbinate); break;
-                    case C.MidTurb: pc = Get("MiddleTurbinate", Structure.MiddleTurbinate, Turbinate * 1.05f); break;
-                    case C.Floor: pc = Get("NasalFloor", Structure.NasalFloor, Floor); break;
-                    case C.Vestibule: pc = Get("Vestibule", Structure.Background, Skin); break;
-                    case C.Pharynx: case C.Torus: pc = Get("Nasopharynx", Structure.SinonasalBone, Pharynx); break;
+                    case Wall.InfTurb: pc = Get("InferiorTurbinate", Structure.InferiorTurbinate, Turbinate); break;
+                    case Wall.MidTurb: pc = Get("MiddleTurbinate", Structure.MiddleTurbinate, Turbinate * 1.05f); break;
+                    case Wall.Floor: pc = Get("NasalFloor", Structure.NasalFloor, Floor); break;
+                    case Wall.Vestibule: pc = Get("Vestibule", Structure.Background, Skin); break;
+                    case Wall.Pharynx: case Wall.Torus: pc = Get("Nasopharynx", Structure.SinonasalBone, Pharynx); break;
                     default: pc = Get("LateralWall", Structure.SinonasalBone, Mucosa * 0.95f); break;
                 }
                 foreach (int vi in new[] { a, b, c })
@@ -169,20 +187,25 @@ namespace SeptoMentor
             }
 
             progress?.Invoke("septal flap pieces");
-            var setup = SurgicalPhase.Setup; var inc = SurgicalPhase.Incision; var flap = SurgicalPhase.FlapElevation;
-            var res = SurgicalPhase.Resection; var clo = SurgicalPhase.Closure;
             var full = new Rect(FlapS0, FlapP0, FlapS1 - FlapS0, FlapP1 - FlapP0);   // x = S, y = P
             var win = new Rect(WinS0, WinP0, WinS1 - WinS0, WinP1 - WinP0);
-            Sheet(Get("Flap_IncisionStrip", Structure.MucoperichondrialFlap, Mucosa, Mask(setup, clo)),
-                  new Rect(FlapS0, IncisionP0, FlapS1 - FlapS0, FlapP0 - IncisionP0), 0f, null, null, stepMm);
-            Sheet(Get("Flap", Structure.MucoperichondrialFlap, Mucosa, Mask(setup, inc, clo)), full, 0f, null, null, stepMm);
-            Sheet(Get("Flap_Elevated", Structure.MucoperichondrialFlap, Mucosa, Mask(flap, res)), full, 0f,
-                  (s, p) => { float u = Mathf.Clamp01((FlapP1 - p) / (FlapP1 - FlapP0)); return -3.4f * u * u * (3 - 2 * u); }, null, stepMm);
+            // Pieces without a phase mask below are switched by SeptoplastySim as the resident operates.
+            float segW = (FlapS1 - FlapS0) / IncisionSegments;
+            for (int k = 0; k < IncisionSegments; k++)
+                Sheet(Get("Flap_IncisionStrip_" + k, Structure.MucoperichondrialFlap, Mucosa),
+                      new Rect(FlapS0 + k * segW, IncisionP0, segW, FlapP0 - IncisionP0), 0f, null, null, stepMm);
+            Sheet(Get("Incision_Bed", Structure.SeptalCartilage, new Color(0.62f, 0.22f, 0.22f)),
+                  new Rect(FlapS0, IncisionP0 - 0.3f, FlapS1 - FlapS0, FlapP0 - IncisionP0 + 0.6f), 1.1f, null, null, stepMm);
+            Sheet(Get("Flap", Structure.MucoperichondrialFlap, Mucosa), full, 0f, null, null, stepMm);   // elevated at runtime
             Sheet(Get("Cartilage", Structure.SeptalCartilage, Cartilage), full, CartilageDepth, null, win, stepMm);
-            Sheet(Get("Cartilage_Resected", Structure.SeptalCartilage, Cartilage, Mask(setup, inc, flap)), win, CartilageDepth, null, null, stepMm);
+            float cw = win.width / ChunksS, ch = win.height / ChunksP;
+            for (int i = 0; i < ChunksS; i++)
+            for (int j = 0; j < ChunksP; j++)
+                Sheet(Get($"Cartilage_Chunk_{i}_{j}", Structure.SeptalCartilage, Cartilage),
+                      new Rect(win.x + i * cw, win.y + j * ch, cw, ch), CartilageDepth, null, null, stepMm);
             Sheet(Get("Contralateral_Mucoperichondrium", Structure.MucoperichondrialFlap, Contra),
                   new Rect(win.x - 0.5f, win.y - 0.5f, win.width + 1f, win.height + 1f), ContralateralDepth, null, null, stepMm);
-            WindowRim(Get("Cartilage_CutEdge", Structure.SeptalCartilage, Cartilage * 0.92f, Mask(res, clo)), win, stepMm);
+            WindowRim(Get("Cartilage_CutEdge", Structure.SeptalCartilage, Cartilage * 0.92f), win, stepMm);
 
             progress?.Invoke("vibrissae");
             Vibrissae(Get("Vibrissae", Structure.Background, Hair));

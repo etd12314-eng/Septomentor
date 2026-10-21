@@ -23,6 +23,7 @@ namespace SeptoMentor.EditorTools
             "com.unity.openxr.feature.arfoundation-meta-camera",    // Meta Quest: Camera (Passthrough)
             "com.unity.openxr.feature.compositionlayers",           // required by the passthrough layer
             "com.unity.openxr.feature.input.handtracking",          // XR Hands: Hand Tracking Subsystem
+            "com.unity.openxr.feature.meta-display-utilities",      // display refresh rate (DisplayRate: 90 Hz)
         };
 
         [MenuItem("SeptoMentor/Configure OpenXR (Android)")]

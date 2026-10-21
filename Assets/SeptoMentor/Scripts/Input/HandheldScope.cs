@@ -5,7 +5,8 @@ using UnityEngine.XR;
 namespace SeptoMentor
 {
     /// <summary>
-    /// The right Touch controller holds a rigid 0-degree endoscope (camera head + 18 cm, 4 mm shaft).
+    /// The LEFT Touch controller holds a rigid 0-degree endoscope (the right hand works the instruments) 
+    /// (camera head + 18 cm, 4 mm shaft).
     /// The scope tip, relative to the patient's head on the OR table, drives the virtual endoscope
     /// inside the anatomy: the head's nostril is mapped 1:1 onto the start of the anatomy's scope path.
     /// Tissue contact gives a haptic buzz; rubbing the mucosa for long raises a caution.
@@ -21,6 +22,7 @@ namespace SeptoMentor
         public float shaftLength = 0.18f;
         [Tooltip("Shaft start in front of the grip (camera head + coupler), m.")]
         public float shaftOffset = 0.06f;
+        public XRNode hand = XRNode.LeftHand;
 
         /// <summary>(message, severity) for the monitor / speech.</summary>
         public event Action<string, Severity> Hint;
@@ -33,7 +35,22 @@ namespace SeptoMentor
         Vector3 _nostril;   // head frame
         bool _sideKnown, _rightNostril;
         float _touchSince = -1, _nextBuzz, _nextHint;
-        static readonly Quaternion HeadToAnatomy = Quaternion.Euler(0, 180f, 0);   // (right, sup, ant) -> (left, sup, post)
+        public static readonly Quaternion HeadToAnatomy = Quaternion.Euler(0, 180f, 0);   // (right, sup, ant) -> (left, sup, post)
+
+        /// <summary>
+        /// Maps a pose in the operating room into the patient's local (anatomy) space. Phantom-aligned anatomy shares
+        /// the OR head's geometry (1:1); otherwise the right nostril is pinned to the start of the scope path.
+        /// </summary>
+        public static bool ToAnatomy(OperatingRoom room, VirtualPatient patient, Vector3 world, Quaternion rot, out Vector3 local, out Quaternion localRot)
+        {
+            local = default; localRot = Quaternion.identity;
+            if (room == null || room.PatientHead == null || patient == null || patient.AnatomyRoot == null) return false;
+            var ph = room.PatientHead;
+            var tipH = ph.InverseTransformPoint(world);
+            local = patient.PhantomAligned ? HeadToAnatomy * tipH : HeadToAnatomy * (tipH - OperatingRoom.Nostril(true)) + patient.pathStart;
+            localRot = HeadToAnatomy * (Quaternion.Inverse(ph.rotation) * rot);
+            return true;
+        }
 
         void Start() => BuildVisual();
 
@@ -69,7 +86,7 @@ namespace SeptoMentor
 
         void Update()
         {
-            var dev = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+            var dev = InputDevices.GetDeviceAtXRNode(hand);
             Vector3 pos = default; Quaternion rot = Quaternion.identity;
             bool tracked = dev.isValid && dev.TryGetFeatureValue(CommonUsages.isTracked, out bool t) && t &&
                            dev.TryGetFeatureValue(CommonUsages.devicePosition, out pos) &&
@@ -111,7 +128,7 @@ namespace SeptoMentor
 
             var rel = tipH - _nostril;
             InNose = rel.z < 0.004f && Mathf.Abs(rel.x) < 0.02f && rel.y > -0.015f && rel.y < 0.05f && rel.z > -0.12f;
-            ContactFeedback(dev, patient.transform.TransformPoint(local));
+            ContactFeedback(patient.transform.TransformPoint(local));
 
             if (!InNose && Time.time > _nextHint && tipH.magnitude < 0.25f)
             {
@@ -120,16 +137,14 @@ namespace SeptoMentor
             }
         }
 
-        void ContactFeedback(InputDevice dev, Vector3 endoWorld)
+        void ContactFeedback(Vector3 endoWorld)
         {
             Touching = InNose && Physics.CheckSphere(endoWorld, 0.0015f);
             if (!Touching) { _touchSince = -1; return; }
             if (_touchSince < 0) _touchSince = Time.time;
-            if (Time.time > _nextBuzz)
-            {
-                _nextBuzz = Time.time + 0.1f;
-                if (dev.TryGetHapticCapabilities(out var caps) && caps.supportsImpulse) dev.SendHapticImpulse(0, 0.35f, 0.08f);
-            }
+            // Soft, growing buzz: a scope rubbing the mucosa smears the lens and makes it bleed.
+            Haptics.Rumble(hand, 0.25f + 0.25f * Mathf.Clamp01((Time.time - _touchSince) / 1.2f));
+            if (Time.time > _nextBuzz) { _nextBuzz = Time.time + 0.6f; Haptics.Pulse(hand, 0.45f, 0.03f); }
             if (Time.time - _touchSince > 1.2f && Time.time > _nextHint)
             {
                 _nextHint = Time.time + 6f;

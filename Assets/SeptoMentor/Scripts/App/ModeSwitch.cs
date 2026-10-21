@@ -6,7 +6,7 @@ namespace SeptoMentor
 {
     /// <summary>
     /// Main menu: A = XR navigation (passthrough, operating room), B = VR training simulator.
-    /// Also added to the other scenes: hold BOTH grips for 2 s to come back here.
+    /// Also added to the other scenes: hold the left menu button for 1 s (or both grips for 2 s, where grips are free) to come back here.
     /// With hand tracking the two modes are big buttons to poke, and the hand menus' "home" button is held instead of the grips.
     /// </summary>
     public class ModeSwitch : MonoBehaviour
@@ -16,6 +16,8 @@ namespace SeptoMentor
         [Tooltip("True only in the launcher scene: shows the menu and reacts to A / B.")]
         public bool isLauncher;
         public Transform head;
+        [Tooltip("Both grips held for 2 s also return to the menu. Off in VR training, where the right grip takes instruments.")]
+        public bool gripsReturn = true;
 
         Label3D _title, _body;
         HandMenu _buttons;
@@ -43,7 +45,7 @@ namespace SeptoMentor
             _body.SetBox(80, 20);
             _body.Set("A  -  XR Navigation (operating room, passthrough, patient CT)\n\n" +
                       "B  -  VR Training simulator (virtual endoscope)\n\n" +
-                      "Research prototype - not a medical device. Hold both grips for 2 s in any mode to return here.\n" +
+                      "Research prototype - not a medical device. Hold the menu button (left controller) for 1 s in any mode to return here.\n" +
                       "Hand tracking: poke a button below; later, turn your left palm toward you for the menu.",
                       new Color(0.85f, 0.9f, 1f));
             _buttons = new GameObject("HandButtons").AddComponent<HandMenu>();
@@ -79,10 +81,11 @@ namespace SeptoMentor
                 else if (Pressed(r, CommonUsages.secondaryButton, ref _b) || KeyB() || vr) SceneManager.LoadScene(TrainingScene);
                 return;
             }
-            bool both = Held(r, CommonUsages.gripButton) && Held(l, CommonUsages.gripButton) || HandMenu.HomeHeldFor(0f);
+            bool menu = Held(l, CommonUsages.menuButton);
+            bool both = menu || gripsReturn && Held(r, CommonUsages.gripButton) && Held(l, CommonUsages.gripButton) || HandMenu.HomeHeldFor(0f);
             if (!both) { _gripsSince = -1; return; }
             if (_gripsSince < 0) _gripsSince = Time.time;
-            if (Time.time - _gripsSince > 2f) SceneManager.LoadScene(LauncherScene);
+            if (Time.time - _gripsSince > (menu ? 1f : 2f)) SceneManager.LoadScene(LauncherScene);
         }
 
         static bool Held(InputDevice d, InputFeatureUsage<bool> u) => d.isValid && d.TryGetFeatureValue(u, out bool v) && v;

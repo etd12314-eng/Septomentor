@@ -7,10 +7,10 @@ namespace SeptoMentor
 {
     /// <summary>
     /// Quest Touch controllers via UnityEngine.XR (OpenXR Oculus Touch profile).
-    ///   A: next phase   B: cycle instrument   X: recenter   Y: ask AI
-    ///   Right stick: scope look (hold right grip: twist instrument)   Left stick Y: advance scope
-    ///   Right trigger: toggle labels   Left trigger: simulate mucosal tear (synthetic only)
-    ///   Right stick click: hand-held scope on/off (the right controller is the endoscope)
+    ///   Left controller = endoscope, right controller = instruments (HandInstruments reads the right grip / trigger).
+    ///   A: next phase   B: next instrument   X: recenter   Y: ask AI
+    ///   Right stick: scope look (autopilot)   Left stick Y: advance scope (autopilot)
+    ///   Right stick click: labels on/off   Left stick click: hand-held scope on/off
     /// Editor keys: N, I, R, Q, L, T, arrows (look), W/S (advance), G (hold = twist).
     /// Hands (controllers put down): left palm toward the face = button menu (poke with the right index finger);
     /// right pinch and drag = scope look (left/right/up/down) and advance (push away / pull back).
@@ -23,7 +23,7 @@ namespace SeptoMentor
         public float Advance { get; private set; }
         public float Twist { get; private set; }
 
-        bool _a, _b, _x, _y, _rt, _lt, _rs;
+        bool _a, _b, _x, _y, _ls, _rs;
         HandMenu _menu;
         readonly Pinch _pinch = new Pinch(true);
         Vector3 _pinchStart;
@@ -47,17 +47,15 @@ namespace SeptoMentor
             Edge(right, CommonUsages.secondaryButton, ref _b, CycleInstrument);
             Edge(left, CommonUsages.primaryButton, ref _x, Recenter);
             Edge(left, CommonUsages.secondaryButton, ref _y, AskAI);
-            EdgeTrigger(right, ref _rt, ToggleLabels);
-            EdgeTrigger(left, ref _lt, SimulateTear);
-            Edge(right, CommonUsages.primary2DAxisClick, ref _rs, ToggleScope);
+            Edge(right, CommonUsages.primary2DAxisClick, ref _rs, ToggleLabels);
+            Edge(left, CommonUsages.primary2DAxisClick, ref _ls, ToggleScope);
 
             right.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 rs);
             left.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 ls);
-            right.TryGetFeatureValue(CommonUsages.gripButton, out bool grip);
             rs = Dead(rs); ls = Dead(ls);
 
-            Look = grip ? Vector2.zero : rs;
-            Twist = grip ? rs.x : 0f;
+            Look = rs;
+            Twist = 0f;   // the instrument now turns with the real hand
             Advance = ls.y;
 
             HandControls();
@@ -103,14 +101,6 @@ namespace SeptoMentor
         static void Tick(InputDevice d)
         {
             if (d.TryGetHapticCapabilities(out var caps) && caps.supportsImpulse) d.SendHapticImpulse(0, 0.3f, 0.03f);
-        }
-
-        static void EdgeTrigger(InputDevice d, ref bool prev, Action a)
-        {
-            // Hysteresis: press above 0.7, release below 0.5, so a half-held trigger can't double-fire.
-            bool now = d.isValid && d.TryGetFeatureValue(CommonUsages.trigger, out float v) && v > (prev ? 0.5f : 0.7f);
-            if (now && !prev) { a?.Invoke(); Tick(d); }
-            prev = now;
         }
 
         void KeyboardFallback()

@@ -18,6 +18,8 @@ namespace SeptoMentor
         /// <summary>Where the video monitor's centre goes (top of the endoscopy tower, across the table).</summary>
         public static readonly Vector3 MonitorPosition = new Vector3(0.25f, 1.62f, 1.18f);
         public static readonly Vector3 SurgeonSpot = Vector3.zero;
+        /// <summary>Top of the Mayo stand's towel, where HandInstruments lays out the grabbable instruments.</summary>
+        public static readonly Vector3 MayoTray = new Vector3(0.55f, 0.98f, 0.05f);
 
         static readonly Vector3 HeadPosition = new Vector3(-0.15f, 1.03f, 0.45f);
 
@@ -236,7 +238,7 @@ namespace SeptoMentor
             }
             Rod(new Vector3(x, 1.15f, z), new Vector3(x, MonitorPosition.y - 0.25f, z), 0.025f, body);
             // Monitor housing behind the video quad (the quad itself belongs to OverlayView).
-            Box(MonitorPosition + new Vector3(0, 0, 0.03f), new Vector3(0.62f, 0.6f, 0.05f), Mat(new Color(0.05f, 0.05f, 0.06f), 0.6f));
+            Box(MonitorPosition + new Vector3(0, 0, 0.03f), new Vector3(0.72f, 0.7f, 0.05f), Mat(new Color(0.05f, 0.05f, 0.06f), 0.6f));
         }
 
         void BuildAnesthesia()
@@ -263,16 +265,11 @@ namespace SeptoMentor
             Rod(new Vector3(0.85f, 0f, 0.05f), new Vector3(0.85f, p.y, 0.05f), 0.015f, steel);
             Box(new Vector3(0.7f, p.y - 0.01f, 0.05f), new Vector3(0.36f, 0.015f, 0.04f), steel);
             Box(p, new Vector3(0.5f, 0.02f, 0.35f), towel);
-            // Instruments laid out: speculum, Cottle and Freer elevators, scalpel, Takahashi forceps, suction.
+            // Nasal speculum and gauze; the working instruments themselves belong to HandInstruments (grabbable).
             float top = p.y + 0.014f;
-            for (int i = 0; i < 5; i++)
-            {
-                float z = p.z - 0.13f + i * 0.06f, len = i == 4 ? 0.22f : 0.18f;
-                Rod(new Vector3(p.x - len / 2, top, z), new Vector3(p.x + len / 2, top, z), i == 4 ? 0.004f : 0.0035f, steel);
-            }
-            Prim(PrimitiveType.Cube, new Vector3(p.x + 0.1f, top, p.z + 0.15f), new Vector3(0.09f, 0.006f, 0.012f), steel, Quaternion.Euler(0, 12, 0));
-            Prim(PrimitiveType.Cube, new Vector3(p.x + 0.1f, top, p.z + 0.13f), new Vector3(0.09f, 0.006f, 0.012f), steel, Quaternion.Euler(0, -12, 0));
-            Box(new Vector3(p.x - 0.15f, top, p.z + 0.14f), new Vector3(0.08f, 0.01f, 0.05f), Mat(new Color(0.9f, 0.9f, 0.9f), 0.1f));   // gauze
+            Prim(PrimitiveType.Cube, new Vector3(p.x + 0.17f, top, p.z + 0.15f), new Vector3(0.09f, 0.006f, 0.012f), steel, Quaternion.Euler(0, 12, 0));
+            Prim(PrimitiveType.Cube, new Vector3(p.x + 0.17f, top, p.z + 0.13f), new Vector3(0.09f, 0.006f, 0.012f), steel, Quaternion.Euler(0, -12, 0));
+            Box(new Vector3(p.x + 0.17f, top, p.z - 0.06f), new Vector3(0.08f, 0.01f, 0.05f), Mat(new Color(0.9f, 0.9f, 0.9f), 0.1f));   // gauze
         }
     }
 }

@@ -79,7 +79,7 @@ namespace SeptoMentor.EditorTools
             var overlay = monitor.gameObject.AddComponent<OverlayView>();
             overlay.provider = provider;
             overlay.monitorShader = Shader.Find("SeptoMentor/MonitorComposite");
-            overlay.monitorSize = 56f;
+            overlay.monitorSize = 66f;   // ~0.66 m, about 32 deg from the surgeon's spot: the endoscope image gets ~800 headset pixels
 
             var holo = new GameObject("AnatomyHologram").transform;
             holo.SetParent(userRig, false);
@@ -96,8 +96,13 @@ namespace SeptoMentor.EditorTools
             var scope = sys.AddComponent<HandheldScope>();
             scope.provider = provider; scope.room = room; scope.head = camGo.transform;
             app.scope = scope;
+            var sim = sys.AddComponent<SeptoplastySim>();
+            sim.provider = provider; sim.mentor = mentor;
+            var hands = sys.AddComponent<HandInstruments>();
+            hands.provider = provider; hands.room = room; hands.sim = sim; hands.head = camGo.transform;
+            app.hands = hands; app.sim = sim;
 
-            sys.AddComponent<ModeSwitch>();   // hold both grips: back to the menu
+            sys.AddComponent<ModeSwitch>().gripsReturn = false;   // hold the left menu button: back to the menu
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             Debug.Log("[SeptoMentor] Scene generated: " + ScenePath);

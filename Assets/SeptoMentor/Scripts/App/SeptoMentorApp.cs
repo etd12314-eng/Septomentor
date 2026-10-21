@@ -17,6 +17,8 @@ namespace SeptoMentor
         [Tooltip("Optional: operating room. When set, recenter moves the user to the surgeon's spot instead of moving the monitor.")]
         public OperatingRoom room;
         public HandheldScope scope;
+        public HandInstruments hands;
+        public SeptoplastySim sim;
         public Transform head;
         [Tooltip("Parent of monitor + hologram; moved by Recenter.")]
         public Transform userRig;
@@ -38,16 +40,12 @@ namespace SeptoMentor
             {
                 if (scope == null) return;
                 scope.handheld = !scope.handheld;
-                overlay.ShowMentor(scope.handheld ? "Hand-held scope: the right controller is the endoscope." : "Scope on autopilot / thumbsticks.", Severity.Info, 3f);
+                overlay.ShowMentor(scope.handheld ? "Hand-held scope: the left controller is the endoscope." : "Scope on autopilot / thumbsticks.", Severity.Info, 3f);
                 logger.Log("input", mentor.Phase.ToString(), null, null, "scope mode " + (scope.handheld ? "hand-held" : "auto"));
             };
-            if (scope != null)
-                scope.Hint += (msg, sev) =>
-                {
-                    overlay.ShowMentor(msg, sev, 4f);
-                    logger.Log("scope", mentor.Phase.ToString(), null, sev.ToString(), msg);
-                    if (sev >= Severity.Caution) speech.Speak(msg);
-                };
+            if (scope != null) scope.Hint += (msg, sev) => OnHint("scope", msg, sev);
+            if (hands != null) hands.Hint += (msg, sev) => OnHint("instrument", msg, sev);
+            if (sim != null) sim.Hint += (msg, sev) => OnHint("tissue", msg, sev);
             input.SimulateTear += () =>
             {
                 if (Synthetic != null && Synthetic.SimulateTear()) logger.Log("input", mentor.Phase.ToString(), null, null, "simulated mucosal tear");
@@ -57,6 +55,8 @@ namespace SeptoMentor
             {
                 overlay.SetPhase(PhaseLine(newP, manual));
                 if (Synthetic != null && Synthetic.patient != null) Synthetic.patient.SetPhase(newP);
+                if (sim != null) sim.OnPhase(newP, manual);
+                _manualPhase = manual;
                 logger.Log("phase", newP.ToString(), null, null, (manual ? "manual " : "auto ") + oldP + " -> " + newP);
                 ai.Coach("phase_change", new MentorEvent { ruleId = "phase_" + newP, severity = Severity.Info, message = "Entered " + newP, phase = newP });
             };
@@ -86,8 +86,19 @@ namespace SeptoMentor
             Invoke(nameof(DoRecenter), 0.5f);   // after the first HMD pose arrives
         }
 
+        bool _manualPhase = true;
+        string _progress;
+
         string PhaseLine(SurgicalPhase p, bool manual) =>
-            $"Phase: {p}{(manual ? "" : " (auto)")}   [A next  B instrument  X recenter{(ai.Configured ? "  Y ask" : "")}]";
+            $"Phase: {p}{(manual ? "" : " (auto)")}" + (sim != null && sim.Available && sim.Progress.Length > 0 ? "  -  " + sim.Progress : "") +
+            $"   [A next  B instrument  X recenter{(ai.Configured ? "  Y ask" : "")}]";
+
+        void OnHint(string source, string msg, Severity sev)
+        {
+            overlay.ShowMentor(msg, sev, sev >= Severity.Caution ? 5f : 4f);
+            logger.Log(source, mentor.Phase.ToString(), null, sev.ToString(), msg);
+            if (sev >= Severity.Caution || source == "tissue") speech.Speak(msg);
+        }
 
         string ControlsCard() =>
             "Controls\n" +
@@ -95,13 +106,15 @@ namespace SeptoMentor
             "B  change instrument\n" +
             "X  recenter view\n" +
             (ai.Configured ? "Y  ask the AI mentor\n" : "Y  (AI mentor off in this build)\n") +
-            (scope != null ? "Right controller  = endoscope: insert it into the nostril of the patient's head\n" +
-                             "Right stick click  hand-held scope / autopilot\n" : "") +
+            (scope != null ? "LEFT controller = endoscope: into the right nostril of the patient\n" +
+                             "Left stick click  hand-held scope / autopilot\n" : "") +
+            (hands != null ? "RIGHT hand = instruments (Mayo stand on your right)\n" +
+                             "  Grip over an instrument: take it   Grip again: hand it back\n" +
+                             "  Trigger: forceps bite / suction\n" +
+                             "  Scalpel: incision line   Freer: lift the flap   Forceps: deviated cartilage\n" : "") +
             "Right stick  look around (autopilot)\n" +
-            "Hold right grip + stick  twist instrument\n" +
-            "Left stick  advance / withdraw scope\n" +
-            "Right trigger  labels on/off\n" +
-            "Left trigger  simulate mucosal tear";
+            "Left stick  advance / withdraw scope (autopilot)\n" +
+            "Right stick click  labels on/off";
 
         void Update()
         {
@@ -110,15 +123,17 @@ namespace SeptoMentor
             syn.manualLook = input.Look;
             syn.manualAdvance = input.Advance;
             if (syn.Instrument != null) syn.Instrument.rollInput = input.Twist;
+            var line = PhaseLine(mentor.Phase, _manualPhase);
+            if (line != _progress) { _progress = line; overlay.SetPhase(line); }
         }
 
         void OnCycleInstrument()
         {
             var syn = Synthetic;
             if (syn == null || syn.Instrument == null) return;
-            var s = syn.Instrument.Next();
-            string name = s == Structure.Background ? "none" : StructureInfo.DisplayName(s);
-            overlay.ShowMentor("Instrument: " + name, Severity.Info, 2f);
+            var s = hands != null && hands.Active ? hands.Cycle() : syn.Instrument.Next();
+            string name = s == Structure.Background ? "none" : InstrumentModels.DisplayName(s);
+            if (s == Structure.Background || hands == null || !hands.Active) overlay.ShowMentor("Instrument: " + name, Severity.Info, 2f);
             logger.Log("input", mentor.Phase.ToString(), null, null, "B: instrument " + name);
         }
 
