@@ -97,13 +97,14 @@ namespace SeptoMentor
             if (!_sideKnown && patient.AnatomyRoot != null)
             {
                 // Use the nostril on the same side as the anatomy's scope path (the head frame is mirrored into it).
-                _rightNostril = patient.pathStart.x < patient.LocalBounds.center.x;
+                _rightNostril = patient.PhantomAligned || patient.pathStart.x < patient.LocalBounds.center.x;
                 _nostril = OperatingRoom.Nostril(_rightNostril);
                 _sideKnown = true;
             }
             if (!_sideKnown) { provider.externalPose = false; return; }
 
-            var local = HeadToAnatomy * (tipH - _nostril) + patient.pathStart;
+            // Phantom-aligned anatomy shares the head's geometry: map 1:1. Otherwise pin the nostril to the path start.
+            var local = patient.PhantomAligned ? HeadToAnatomy * tipH : HeadToAnatomy * (tipH - _nostril) + patient.pathStart;
             provider.externalPose = true;
             provider.externalPosition = local;
             provider.externalRotation = HeadToAnatomy * rotH;

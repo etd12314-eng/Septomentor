@@ -9,6 +9,7 @@ Shader "SeptoMentor/ORSurface"
         _Gloss ("Gloss", Range(0, 1)) = 0.2
         _Tile ("Tile size (m, 0 = none)", Float) = 0
         _Emission ("Emission", Range(0, 1)) = 0
+        _Metal ("Metallic (fake room reflection)", Range(0, 1)) = 0
     }
     SubShader
     {
@@ -22,7 +23,7 @@ Shader "SeptoMentor/ORSurface"
             #include "UnityCG.cginc"
 
             float4 _Color;
-            float _Gloss, _Tile, _Emission;
+            float _Gloss, _Tile, _Emission, _Metal;
             // xyz position, w intensity / direction the lamp faces
             float4 _ORLamp0, _ORLamp1, _ORLampDir0, _ORLampDir1;
 
@@ -74,6 +75,14 @@ Shader "SeptoMentor/ORSurface"
                 spec += 0.25 * pow(saturate(dot(n, normalize(float3(0, 1, 0) + v))), 8.0 + 60.0 * _Gloss);   // ceiling sheen
 
                 float3 col = albedo * (ambient + lit * float3(1.0, 0.98, 0.93)) + spec * _Gloss;
+                if (_Metal > 0)
+                {
+                    // Stainless steel: reflect a stylised room (dark floor, pale walls, bright ceiling panels).
+                    float3 r = reflect(-v, n);
+                    float3 room = lerp(float3(0.25, 0.27, 0.27), float3(0.62, 0.72, 0.72), smoothstep(-0.4, 0.1, r.y));
+                    room = lerp(room, float3(1.3, 1.3, 1.25), smoothstep(0.55, 0.85, r.y));
+                    col = lerp(col, albedo * room + spec * 0.6, _Metal);
+                }
                 col = lerp(col, _Color.rgb * 1.2, _Emission);
                 return fixed4(col, 1);
             }

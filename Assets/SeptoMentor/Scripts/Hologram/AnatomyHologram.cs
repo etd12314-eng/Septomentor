@@ -15,6 +15,8 @@ namespace SeptoMentor
         public float spinDegPerSec = 0f;
 
         Transform _content, _marker, _ray;
+        readonly System.Collections.Generic.List<Mirror> _mirror = new System.Collections.Generic.List<Mirror>();
+        struct Mirror { public GameObject part, ghost; }
         bool _built;
 
         void LateUpdate()
@@ -25,6 +27,8 @@ namespace SeptoMentor
                 if (synthetic.patient.AnatomyRoot == null || synthetic.EndoCamera == null) return;
                 Build();
             }
+            foreach (var m in _mirror)   // phase-dependent parts (flap, resection window)
+                if (m.ghost.activeSelf != m.part.activeInHierarchy) m.ghost.SetActive(m.part.activeInHierarchy);
             if (spinDegPerSec != 0) transform.Rotate(0, spinDegPerSec * Time.deltaTime, 0, Space.Self);
 
             _marker.localPosition = synthetic.ScopeLocalPosition;
@@ -63,6 +67,7 @@ namespace SeptoMentor
                 c.a = 0.35f;
                 mat.SetColor("_Color", c);
                 go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+                _mirror.Add(new Mirror { part = part.gameObject, ghost = go });
             }
 
             _marker = GameObject.CreatePrimitive(PrimitiveType.Sphere).transform;

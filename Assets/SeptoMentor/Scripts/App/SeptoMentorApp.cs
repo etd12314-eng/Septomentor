@@ -56,6 +56,7 @@ namespace SeptoMentor
             mentor.PhaseChanged += (oldP, newP, manual) =>
             {
                 overlay.SetPhase(PhaseLine(newP, manual));
+                if (Synthetic != null && Synthetic.patient != null) Synthetic.patient.SetPhase(newP);
                 logger.Log("phase", newP.ToString(), null, null, (manual ? "manual " : "auto ") + oldP + " -> " + newP);
                 ai.Coach("phase_change", new MentorEvent { ruleId = "phase_" + newP, severity = Severity.Info, message = "Entered " + newP, phase = newP });
             };

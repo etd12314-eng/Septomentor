@@ -48,8 +48,9 @@ namespace SeptoMentor.EditorTools
             patient.tissueShader = Shader.Find("SeptoMentor/EndoTissue");
             patient.mapping = LabelMapping.LoadOrDefault();
             patient.objModel = AssetDatabase.LoadAssetAtPath<GameObject>(ObjPath);
-            Debug.Log(patient.objModel != null
-                ? "[SeptoMentor] Using " + ObjPath
+            patient.generated = BakeNasalAnatomy();
+            Debug.Log(patient.generated.Count > 0 ? $"[SeptoMentor] Using the procedural nasal cavity ({patient.generated.Count} parts)"
+                : patient.objModel != null ? "[SeptoMentor] Using " + ObjPath
                 : "[SeptoMentor] " + ObjPath + " not found - procedural PLACEHOLDER anatomy will be used.");
 
             // --- Systems -------------------------------------------------------------------------
@@ -70,6 +71,7 @@ namespace SeptoMentor.EditorTools
             // --- Operating room; the monitor sits on the endoscopy tower ---------------------------
             var room = new GameObject("OperatingRoom").AddComponent<OperatingRoom>();
             room.surfaceShader = Shader.Find("SeptoMentor/ORSurface");
+            room.shadowShader = Shader.Find("SeptoMentor/ORShadow");
             var userRig = new GameObject("UserRig").transform;
             userRig.position = OperatingRoom.MonitorPosition;
             var monitor = new GameObject("Monitor").transform;
@@ -104,7 +106,8 @@ namespace SeptoMentor.EditorTools
             BuildNavigation();
             EditorBuildSettings.scenes = AllScenes.Select(p => new EditorBuildSettingsScene(p, true)).ToArray();
             AlwaysIncludeShaders("SeptoMentor/EndoTissue", "SeptoMentor/LabelId", "SeptoMentor/MonitorComposite", "SeptoMentor/Ghost",
-                                 "SeptoMentor/CtSlice", "SeptoMentor/NavGhost", "SeptoMentor/NavMarker", "SeptoMentor/ORSurface");
+                                 "SeptoMentor/CtSlice", "SeptoMentor/NavGhost", "SeptoMentor/NavMarker", "SeptoMentor/ORSurface",
+                                 "SeptoMentor/ORShadow", "Unlit/Texture");
         }
 
         /// <summary>XR origin + camera. Passthrough = transparent clear + AR Foundation camera manager (Meta OpenXR).</summary>
@@ -171,6 +174,42 @@ namespace SeptoMentor.EditorTools
 
             EditorSceneManager.SaveScene(scene, NavigationPath);
             Debug.Log("[SeptoMentor] Scene generated: " + NavigationPath);
+        }
+
+        const string NasalAnatomyPath = "Assets/SeptoMentor/Generated/NasalAnatomy.asset";
+
+        /// <summary>Meshes the procedural nasal cavity (NasalAnatomy) into one asset with a mesh per part.</summary>
+        static System.Collections.Generic.List<VirtualPatient.GeneratedPart> BakeNasalAnatomy()
+        {
+            var list = new System.Collections.Generic.List<VirtualPatient.GeneratedPart>();
+            try
+            {
+                var t0 = DateTime.Now;
+                var pieces = NasalAnatomy.Build(0.5f, s => Debug.Log("[SeptoMentor] nasal anatomy: " + s));
+                Directory.CreateDirectory(Path.GetDirectoryName(NasalAnatomyPath));
+                AssetDatabase.DeleteAsset(NasalAnatomyPath);
+                int verts = 0;
+                foreach (var p in pieces)
+                {
+                    var m = new Mesh
+                    {
+                        name = p.name,
+                        indexFormat = p.verts.Count > 65000 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16,
+                    };
+                    m.SetVertices(p.verts);
+                    m.SetTriangles(p.tris, 0);
+                    m.RecalculateNormals();
+                    m.RecalculateBounds();
+                    if (list.Count == 0) AssetDatabase.CreateAsset(m, NasalAnatomyPath);
+                    else AssetDatabase.AddObjectToAsset(m, NasalAnatomyPath);
+                    list.Add(new VirtualPatient.GeneratedPart { name = p.name, structure = p.structure, tint = p.tint, phaseMask = p.phaseMask, mesh = m });
+                    verts += p.verts.Count;
+                }
+                AssetDatabase.SaveAssets();
+                Debug.Log($"[SeptoMentor] Nasal anatomy baked: {pieces.Count} parts, {verts} vertices, {(DateTime.Now - t0).TotalSeconds:0.0} s");
+            }
+            catch (Exception e) { Debug.LogError("[SeptoMentor] Nasal anatomy bake failed: " + e); list.Clear(); }
+            return list;
         }
 
         /// <summary>Shaders created via code at runtime must be in the build.</summary>

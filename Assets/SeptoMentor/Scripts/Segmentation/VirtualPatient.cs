@@ -1,12 +1,14 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace SeptoMentor
 {
     /// <summary>
-    /// The virtual nasal anatomy the synthetic endoscope flies through.
-    /// Uses the imported Slicer OBJ (Segmentation-1.obj) if assigned; otherwise builds
-    /// a crude PROCEDURAL PLACEHOLDER so the app runs without patient-derived data.
+    /// The virtual nasal anatomy the synthetic endoscope flies through. In order of preference:
+    /// the generated procedural nasal cavity (NasalAnatomy, meshes baked by SceneBuilder; aligned
+    /// with the OR head and switched per surgical phase), the imported Slicer OBJ, or a crude
+    /// PROCEDURAL PLACEHOLDER so the app runs without patient-derived data.
     /// Lives far from the user (see SceneBuilder) so the headset camera never sees it.
     /// Convention for the placeholder: +X right (lateral), +Y superior, +Z posterior, metres.
     /// </summary>
@@ -14,6 +16,20 @@ namespace SeptoMentor
     {
         [Tooltip("Imported Segmentation-1.obj (model prefab). Null = procedural placeholder.")]
         public GameObject objModel;
+
+        [Serializable]
+        public class GeneratedPart
+        {
+            public string name;
+            public Structure structure;
+            public Color tint = Color.white;
+            [Tooltip("Bit per SurgicalPhase: the part is shown only in those phases.")]
+            public int phaseMask = 0x1F;
+            public Mesh mesh;
+        }
+
+        [Tooltip("Baked procedural nasal cavity (SceneBuilder). Preferred over the OBJ when present.")]
+        public List<GeneratedPart> generated = new List<GeneratedPart>();
 
         public Shader tissueShader;
         public LabelMapping mapping = new LabelMapping();
@@ -24,12 +40,16 @@ namespace SeptoMentor
         public float scopeYaw;
 
         public bool UsingPlaceholderGeometry { get; private set; }
+        /// <summary>True when the anatomy is in the CT phantom's frame (L, S, P metres), i.e. it lines up with the OR head.</summary>
+        public bool PhantomAligned { get; private set; }
         public bool AllMappingsConfirmed { get; private set; }
         public Transform AnatomyRoot { get; private set; }
         public readonly List<AnatomyPart> Parts = new List<AnatomyPart>();
         public Bounds LocalBounds { get; private set; }
 
         Material _tissueMat;
+        readonly List<KeyValuePair<GameObject, int>> _phased = new List<KeyValuePair<GameObject, int>>();
+        SurgicalPhase _phase = SurgicalPhase.Setup;
 
         public void Build()
         {
@@ -38,11 +58,44 @@ namespace SeptoMentor
             AnatomyRoot = new GameObject("Anatomy").transform;
             AnatomyRoot.SetParent(transform, false);
 
-            if (objModel != null) BuildFromObj();
+            if (generated != null && generated.Count > 0) BuildGenerated();
+            else if (objModel != null) BuildFromObj();
             else BuildPlaceholder();
 
             ComputeBounds();
             if (pathStart == Vector3.zero && pathEnd == Vector3.zero) AutoPath();
+        }
+
+        void BuildGenerated()
+        {
+            UsingPlaceholderGeometry = true;   // synthetic anatomy, not patient data
+            AllMappingsConfirmed = true;       // labels are known by construction
+            PhantomAligned = true;
+            foreach (var g in generated)
+            {
+                if (g.mesh == null) continue;
+                var go = new GameObject(g.name);
+                go.transform.SetParent(AnatomyRoot, false);
+                go.AddComponent<MeshFilter>().sharedMesh = g.mesh;
+                go.AddComponent<MeshRenderer>();
+                if (g.structure != Structure.Background) go.AddComponent<MeshCollider>().sharedMesh = g.mesh;
+                var p = AddPart(go, g.structure, true);
+                p.tissueColor = g.tint;
+                if (g.structure == Structure.Background) p.wetness = 0.25f;   // vestibular skin, hairs
+                p.Apply();
+                if (g.phaseMask != 0x1F) _phased.Add(new KeyValuePair<GameObject, int>(go, g.phaseMask));
+            }
+            pathStart = NasalAnatomy.PathStart;
+            pathEnd = NasalAnatomy.PathEnd;
+            scopeYaw = 6f;   // slightly toward the septum
+            SetPhase(_phase);
+        }
+
+        /// <summary>Shows the septal pieces of this phase (intact mucosa, incision, elevated flap, resection window).</summary>
+        public void SetPhase(SurgicalPhase phase)
+        {
+            _phase = phase;
+            foreach (var kv in _phased) kv.Key.SetActive((kv.Value >> (int)phase & 1) != 0);
         }
 
         void BuildFromObj()

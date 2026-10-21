@@ -90,6 +90,13 @@ namespace SeptoMentor.Nav
         /// <summary>Approximate signed distance to the skin (negative inside), in mm: a mannequin-like head
         /// (cranium, face, jaw, chin, cheekbones, brow, eye sockets, ears, neck, nose, lips) built from
         /// smoothly blended primitives.</summary>
+        /// <summary>CT value (HU) at a phantom point (L, S, P mm), with the same partial-volume skin blend as Generate.</summary>
+        public static float SampleHu(Vector3 p)
+        {
+            float skin = SkinSdf(p);
+            return skin > 1f ? -1000f : Mathf.Lerp(Hu(p, skin, out _), -1000f, Mathf.Clamp01((skin + 1f) * 0.5f));
+        }
+
         public static float SkinSdf(Vector3 p)
         {
             var m = new Vector3(Mathf.Abs(p.x), p.y, p.z);   // mirrored for paired features
@@ -115,6 +122,7 @@ namespace SeptoMentor.Nav
             d = SMin(d, Ell(p, new Vector3(0, -51, -77), new Vector3(16, 6, 8.5f)), 5);            // lower lip
             d = SSub(d, Ell(p, new Vector3(0, -45.5f, -90), new Vector3(19, 0.9f, 13)), 2);        // mouth
             d = SSub(d, Capsule(p, new Vector3(0, -31, -86), new Vector3(0, -38, -88), 2, 2), 2);  // philtrum
+            d = SSub(d, Capsule(m, new Vector3(7.5f, -27.5f, -95), new Vector3(8, -21, -76), 3.4f, 4.4f), 1.2f);   // nostrils (match NasalAnatomy's vestibule)
             return d;
         }
 

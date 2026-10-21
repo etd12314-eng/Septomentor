@@ -11,9 +11,9 @@ namespace SeptoMentor
     /// The resident stands at the patient's right side, at the head (world origin, facing +Z); the
     /// head lies to their left with the face up.
     /// </summary>
-    public class OperatingRoom : MonoBehaviour
+    public partial class OperatingRoom : MonoBehaviour
     {
-        public Shader surfaceShader;
+        public Shader surfaceShader, shadowShader;
 
         /// <summary>Where the video monitor's centre goes (top of the endoscopy tower, across the table).</summary>
         public static readonly Vector3 MonitorPosition = new Vector3(0.25f, 1.62f, 1.18f);
@@ -25,7 +25,7 @@ namespace SeptoMentor
         public Transform PatientHead { get; private set; }
 
         /// <summary>Nostril entrance in the head frame (phantom geometry).</summary>
-        public static Vector3 Nostril(bool right) => new Vector3(right ? 0.007f : -0.007f, -0.026f, 0.086f);
+        public static Vector3 Nostril(bool right) => new Vector3(right ? 0.0075f : -0.0075f, -0.026f, 0.088f);
 
         Transform _root;
         Task<SurfaceNets> _headTask;
@@ -40,7 +40,12 @@ namespace SeptoMentor
             BuildTower();
             BuildAnesthesia();
             BuildMayoStand();
+            BuildDetails();
             StaticBatchingUtility.Combine(_root.gameObject);
+            BuildStaff();
+            BuildVitals();
+            BuildCtViewer();
+            BuildAudio();
 
             PatientHead = new GameObject("PatientHead").transform;
             PatientHead.SetParent(transform, false);
@@ -51,6 +56,7 @@ namespace SeptoMentor
 
         void Update()
         {
+            UpdateLife();
             if (_headTask == null || !_headTask.IsCompleted) return;
             if (_headTask.Status == TaskStatus.RanToCompletion)
             {
@@ -87,13 +93,14 @@ namespace SeptoMentor
 
         // ------------------------------------------------------------------ building blocks
 
-        Material Mat(Color c, float gloss = 0.2f, float tile = 0f, float emission = 0f)
+        Material Mat(Color c, float gloss = 0.2f, float tile = 0f, float emission = 0f, float metal = 0f)
         {
             var m = new Material(surfaceShader != null ? surfaceShader : Shader.Find("SeptoMentor/ORSurface"));
             m.SetColor("_Color", c);
             m.SetFloat("_Gloss", gloss);
             m.SetFloat("_Tile", tile);
             m.SetFloat("_Emission", emission);
+            m.SetFloat("_Metal", metal);
             return m;
         }
 
@@ -140,7 +147,7 @@ namespace SeptoMentor
                 Box(new Vector3(p.x, h - 0.02f, p.z), new Vector3(1.2f, 0.02f, 0.6f), panel);
 
             // Sliding door with a window, wall clock, wall cabinets, scrub-room window.
-            var steel = Mat(new Color(0.7f, 0.72f, 0.74f), 0.6f);
+            var steel = Mat(new Color(0.7f, 0.72f, 0.74f), 0.6f, 0f, 0f, 0.6f);
             Box(new Vector3(-2.2f, 1.1f, z1 - 0.03f), new Vector3(1.4f, 2.2f, 0.04f), Mat(new Color(0.55f, 0.62f, 0.66f), 0.4f));
             Box(new Vector3(-2.2f, 1.5f, z1 - 0.06f), new Vector3(0.4f, 0.4f, 0.02f), Mat(new Color(0.7f, 0.8f, 0.85f), 0.8f, 0, 0.6f));
             Prim(PrimitiveType.Cylinder, new Vector3(1.6f, 2.35f, z1 - 0.03f), new Vector3(0.32f, 0.01f, 0.32f), Mat(Color.white, 0.3f),
@@ -156,7 +163,7 @@ namespace SeptoMentor
         void BuildTable()
         {
             var dark = Mat(new Color(0.12f, 0.13f, 0.15f), 0.3f);
-            var steel = Mat(new Color(0.72f, 0.74f, 0.76f), 0.7f);
+            var steel = Mat(new Color(0.72f, 0.74f, 0.76f), 0.7f, 0f, 0f, 0.8f);
             var drape = Mat(new Color(0.22f, 0.42f, 0.62f), 0.1f);
             Box(new Vector3(0.75f, 0.04f, 0.45f), new Vector3(0.8f, 0.08f, 0.5f), steel);
             Box(new Vector3(0.75f, 0.45f, 0.45f), new Vector3(0.3f, 0.8f, 0.25f), steel);
@@ -236,25 +243,21 @@ namespace SeptoMentor
         {
             var shell = Mat(new Color(0.78f, 0.8f, 0.82f), 0.4f);
             var screen = Mat(new Color(0.03f, 0.08f, 0.06f), 0.9f, 0f, 0.9f);
-            var trace = Mat(new Color(0.2f, 0.95f, 0.4f), 0f, 0f, 1f);
             Box(new Vector3(-1.05f, 0.65f, 1.0f), new Vector3(0.7f, 1.3f, 0.55f), shell);
-            var mon = new Vector3(-1.05f, 1.6f, 0.95f);
+            var mon = VitalsScreen;
             Box(mon, new Vector3(0.45f, 0.32f, 0.04f), shell);
             Box(mon + new Vector3(0, 0, -0.022f), new Vector3(0.4f, 0.27f, 0.005f), screen);
-            for (int i = 0; i < 3; i++)
-                Box(mon + new Vector3(0, 0.08f - i * 0.075f, -0.026f), new Vector3(0.34f, 0.006f, 0.002f),
-                    i == 1 ? Mat(new Color(0.95f, 0.85f, 0.2f), 0f, 0f, 1f) : trace);
             Box(new Vector3(-1.2f, 1.36f, 0.8f), new Vector3(0.08f, 0.16f, 0.08f), Mat(new Color(0.85f, 0.65f, 0.1f), 0.5f));
             Box(new Vector3(-1.05f, 1.36f, 0.8f), new Vector3(0.08f, 0.16f, 0.08f), Mat(new Color(0.55f, 0.25f, 0.65f), 0.5f));
             // IV pole with a bag.
-            var steel = Mat(new Color(0.75f, 0.77f, 0.8f), 0.8f);
+            var steel = Mat(new Color(0.75f, 0.77f, 0.8f), 0.8f, 0f, 0f, 0.8f);
             Rod(new Vector3(-0.75f, 0f, 0.15f), new Vector3(-0.75f, 1.95f, 0.15f), 0.012f, steel);
             Prim(PrimitiveType.Capsule, new Vector3(-0.75f, 1.75f, 0.2f), new Vector3(0.09f, 0.1f, 0.04f), Mat(new Color(0.85f, 0.9f, 0.95f), 0.9f));
         }
 
         void BuildMayoStand()
         {
-            var steel = Mat(new Color(0.75f, 0.77f, 0.8f), 0.85f);
+            var steel = Mat(new Color(0.75f, 0.77f, 0.8f), 0.85f, 0f, 0f, 0.85f);
             var towel = Mat(new Color(0.3f, 0.52f, 0.55f), 0.05f);
             var p = new Vector3(0.55f, 0.97f, 0.05f);
             Rod(new Vector3(0.85f, 0f, 0.05f), new Vector3(0.85f, p.y, 0.05f), 0.015f, steel);
