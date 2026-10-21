@@ -5,7 +5,7 @@ namespace SeptoMentor.Nav
 {
     /// <summary>
     /// Synthetic head CT ("phantom") so the navigation mode works without patient data and can
-    /// be rehearsed on a mannequin. Simplified, NOT anatomically accurate: skin, nose, nasal
+    /// be rehearsed on a mannequin. Simplified, NOT anatomically accurate: skin and face, nose, nasal
     /// cavity with a septum deviated to the patient's right, turbinates, maxillary sinuses,
     /// palate, skull base and cranium. Also returns a label volume (septal cartilage / bone /
     /// turbinates) and the case landmarks, all in the same LPS frame.
@@ -95,81 +95,241 @@ namespace SeptoMentor.Nav
         }
 
         /// <summary>
-        /// Approximate signed distance to the skin (negative inside), mm: an adult head from smoothly blended
-        /// primitives - skull, cheeks, jaw, closed eyes with lid lines, ears, a nose with dorsum, tip domes,
-        /// alar wings, columella and teardrop nostrils that open into NasalAnatomy's vestibule, and lips.
+        /// Approximate signed distance to the skin (negative inside), mm. The head is a loft of horizontal
+        /// superellipses (forehead, face, jaw, neck: <see cref="Head"/>), with the face relief (brows, orbits and
+        /// closed lids, cheeks, lips, chin) and creases displaced onto it, and ears. The nose is built like a
+        /// sculptor's: a wedge-shaped dorsum with a rounded ridge, the lower nose standing on a tilted nasal base,
+        /// a lobule with two tip-defining domes, the alar lobules swept around the nostrils, a columella, and
+        /// teardrop nostrils that open into NasalAnatomy's vestibule.
         /// </summary>
         public static float SkinSdf(Vector3 p)
         {
             var m = new Vector3(Mathf.Abs(p.x), p.y, p.z);   // mirrored for paired features
-            // Skull and facial masses.
-            float d = Ell(p, new Vector3(0, 36, 8), new Vector3(72, 88, 98));                                   // cranium
-            d = SMin(d, Ell(p, new Vector3(0, -4, -26), new Vector3(60, 66, 58)), 14);                          // midface
-            d = SSub(d, Ell(m, new Vector3(66, 30, -40), new Vector3(10, 18, 20)), 10);                         // temples
-            d = SMin(d, Capsule(m, new Vector3(46, -50, -6), new Vector3(16, -74, -52), 8, 7), 14);             // mandible
-            d = SMin(d, Ell(p, new Vector3(0, -73, -58), new Vector3(18, 11, 13)), 10);                         // chin
-            d = SMin(d, Ell(p, new Vector3(0, -66, -30), new Vector3(36, 14, 32)), 14);                         // submental
-            d = SSub(d, Capsule(p, new Vector3(-12, -62, -74), new Vector3(12, -62, -74), 3, 3), 5);            // mentolabial sulcus
-            d = SMin(d, Ell(m, new Vector3(44, 8, -52), new Vector3(15, 10, 17)), 14);                          // zygoma
-            d = SMin(d, Ell(m, new Vector3(30, -12, -64), new Vector3(16, 14, 12)), 12);                        // cheeks
-            d = SMin(d, Ell(m, new Vector3(24, 41, -74), new Vector3(19, 5.5f, 9)), 8);                         // brow ridge
-            // Eyes: socket, closed lids with the lid line and the upper lid crease.
-            d = SSub(d, Ell(m, new Vector3(31, 29, -84), new Vector3(15, 10, 14)), 5);
-            d = SMin(d, Ell(m, new Vector3(31, 28, -66), new Vector3(12.5f, 9.5f, 11.5f)), 2.5f);
-            d = SSub(d, Capsule(m, new Vector3(21, 27.2f, -77.3f), new Vector3(41, 27.6f, -72), 0.35f, 0.35f), 0.6f);
-            d = SSub(d, Capsule(m, new Vector3(21, 33.5f, -75), new Vector3(41, 34, -70), 0.6f, 0.6f), 1.5f);
-            float neck = (Mathf.Sqrt(Sq(p.x / 50) + Sq((p.z - 20) / 52)) - 1) * 50;
-            d = SMin(d, Mathf.Max(neck, p.y + 15), 16);
-            float ear = SSub(Ell(m, new Vector3(72, 22, 14), new Vector3(7, 29, 17)), Ell(m, new Vector3(78, 18, 14), new Vector3(4, 13, 8)), 3);   // helix + concha
-            d = SMin(d, ear, 3);
+            float d = Loft(p);
+            float front = Mathf.Clamp01((LoftCentre - 20 - p.z) / 30);
+            if (front > 0) d -= (Relief(m.x, p.y) + Creases(m.x, p.y)) * front;
+            if (m.x < 32 && p.y > -44 && p.y < 45 && p.z < -55)
+                d = SMin(d, Nose(p, m), Mathf.Clamp(3.5f + (p.y + 16) * 0.5f, 3.5f, 8f) + 1.5f * Mathf.Clamp01((-26 - p.y) / 3));
+            if (m.x > 50 && p.y > -25 && p.y < 62 && p.z > -15 && p.z < 45)
+            {
+                float ear = EllR(m, new Vector3(71, 21, 16), new Vector3(5, 29, 16), 0, -12);                     // auricle, tilted back
+                ear = SMin(ear, EllR(m, new Vector3(73.5f, 22, 16), new Vector3(3.2f, 30, 17.5f), 0, -12), 2);   // helix
+                ear = SSub(ear, EllR(m, new Vector3(77, 23, 15), new Vector3(3.5f, 19, 10.5f), 0, -12), 2);      // scapha, fossa
+                ear = SSub(ear, Ell(m, new Vector3(75.5f, 14, 12), new Vector3(4.5f, 9, 7)), 2.5f);              // concha
+                ear = SMin(ear, Ell(m, new Vector3(71.5f, -4, 13), new Vector3(4, 7, 7)), 3);                     // lobule
+                ear = SMin(ear, Ell(m, new Vector3(73, 14, 4), new Vector3(4, 5, 3.5f)), 1.5f);                   // tragus
+                d = SMin(d, ear, 3);
+            }
+            if (m.x < 16 && p.y > -36 && p.y < -14 && p.z < -75) d = SSub(d, Nostril(m), 0.8f);
+            return d;
+        }
 
-            // Nose: dorsum, lobule with tip-defining domes, alar wings around the nostrils, columella.
-            float nose = Capsule(p, new Vector3(0, 30, -80), new Vector3(0, -6, -93), 5f, 6.5f);
-            nose = SMin(nose, Ell(p, new Vector3(0, -14, -91), new Vector3(8, 7.5f, 7)), 4);
-            nose = SMin(nose, Ell(m, new Vector3(3.4f, -12.5f, -95), new Vector3(4.3f, 5, 4.5f)), 3);
-            nose = SMin(nose, EllR(m, new Vector3(11.5f, -23, -85), new Vector3(4.6f, 5, 10), 28, 0), 5);
-            nose = SMin(nose, Capsule(p, new Vector3(0, -21, -92), new Vector3(0, -29.5f, -82), 3f, 3.3f), 2.5f);
-            d = SMin(d, nose, 5);
-            d = SSub(d, Capsule(m, new Vector3(20.5f, -27, -75.5f), new Vector3(26, -50, -68), 0.6f, 0.5f), 5);  // nasolabial folds
+        // Head loft: per height S, a horizontal superellipse |L/A|^n + |(P - c)/R|^n = 1 with c = LoftCentre,
+        // R = c - front (anterior) or back - c (posterior). Columns: S, front P (midline, before relief), back P, A, n.
+        const float LoftCentre = 10f;
+        static readonly float[,] Head =
+        {
+            { -160, -42, 62, 50, 2.0f }, { -100, -44, 62, 48, 2.0f }, { -88, -50, 64, 46, 2.0f }, { -82, -63, 65, 44, 2.1f },
+            { -76, -75, 66, 44, 2.2f }, { -70, -79, 66, 46, 2.2f }, { -58, -75, 66, 50, 2.3f }, { -45, -79, 68, 55, 2.4f },
+            { -32, -80, 72, 59, 2.4f }, { -20, -78, 78, 62, 2.4f }, { -5, -77, 85, 65, 2.4f }, { 10, -78, 92, 68, 2.3f },
+            { 22, -80, 100, 70, 2.2f }, { 30, -83, 106, 72, 2.2f }, { 42, -88, 110, 74, 2.1f }, { 55, -87, 110, 75, 2.0f },
+            { 75, -82, 106, 72, 2.0f }, { 95, -72, 97, 66, 2.0f }, { 110, -55, 80, 55, 2.0f }, { 120, -28, 52, 36, 2.0f },
+            { 125, 0, 14, 8, 2.0f }, { 127, 8, 10, 1, 2.0f },
+        };
+        static float[][] _headSlopes;
 
-            // Lips: upper lip with Cupid's bow, lower lip, mouth line, philtrum.
-            d = SMin(d, EllR(p, new Vector3(0, -39, -74), new Vector3(17, 5.5f, 7), 0, -15), 4);
-            d = SMin(d, Ell(m, new Vector3(4, -42.5f, -77.5f), new Vector3(5, 2.6f, 3.2f)), 2);
-            d = SMin(d, EllR(p, new Vector3(0, -50, -71.5f), new Vector3(15, 5.5f, 7.5f), 0, 10), 4);
-            d = SSub(d, EllR(p, new Vector3(0, -45.2f, -84), new Vector3(20, 0.7f, 12), 0, 0), 1.2f);
-            d = SSub(d, Capsule(p, new Vector3(0, -31.5f, -81.5f), new Vector3(0, -38, -81.5f), 1.4f, 1.6f), 1.5f);
+        static float Loft(Vector3 p)
+        {
+            if (_headSlopes == null)
+            {
+                var s = new float[4][];
+                for (int c = 1; c <= 4; c++) s[c - 1] = PchipSlopes(Head, c);
+                _headSlopes = s;
+            }
+            float f = Pchip(Head, 1, _headSlopes[0], p.y), b = Pchip(Head, 2, _headSlopes[1], p.y);
+            float a = Pchip(Head, 3, _headSlopes[2], p.y), n = Pchip(Head, 4, _headSlopes[3], p.y);
+            float r = p.z < LoftCentre ? LoftCentre - f : b - LoftCentre;
+            float x = Mathf.Abs(p.x) / a + 1e-6f, z = Mathf.Abs(p.z - LoftCentre) / r + 1e-6f;
+            float rho = Mathf.Pow(Mathf.Pow(x, n) + Mathf.Pow(z, n), 1 / n) + 1e-9f;
+            float k = Mathf.Pow(rho, 1 - n);
+            float gx = k * Mathf.Pow(x, n - 1) / a, gz = k * Mathf.Pow(z, n - 1) / r;
+            return Mathf.Max((rho - 1) / Mathf.Sqrt(gx * gx + gz * gz + 1e-12f), p.y - 127);
+        }
 
-            // Nostrils: teardrop openings on the nasal base, continuing up into the vestibule (as NasalAnatomy's).
-            float nostril = EllR(m, new Vector3(7.6f, -28.6f, -88), new Vector3(3f, 3.2f, 6.3f), -22, 0);
-            nostril = SMin(nostril, Capsule(m, new Vector3(7.6f, -27.5f, -90), new Vector3(8, -19, -68), 3.2f, 4.6f), 2);
-            return SSub(d, nostril, 0.8f);
+        /// <summary>Monotone cubic (Fritsch-Carlson) slopes for column <paramref name="c"/> of a table keyed by column 0.</summary>
+        static float[] PchipSlopes(float[,] t, int c)
+        {
+            int n = t.GetLength(0);
+            var m = new float[n];
+            float Dl(int i) => (t[i + 1, c] - t[i, c]) / (t[i + 1, 0] - t[i, 0]);
+            m[0] = Dl(0); m[n - 1] = Dl(n - 2);
+            for (int i = 1; i < n - 1; i++)
+            {
+                float d0 = Dl(i - 1), d1 = Dl(i);
+                if (d0 * d1 <= 0) { m[i] = 0; continue; }
+                float h0 = t[i, 0] - t[i - 1, 0], h1 = t[i + 1, 0] - t[i, 0];
+                float w1 = 2 * h1 + h0, w2 = h1 + 2 * h0;
+                m[i] = (w1 + w2) / (w1 / d0 + w2 / d1);
+            }
+            return m;
+        }
+
+        static float Pchip(float[,] t, int c, float[] m, float s)
+        {
+            int n = t.GetLength(0);
+            s = Mathf.Clamp(s, t[0, 0], t[n - 1, 0]);
+            int i = 0;
+            while (i < n - 2 && s > t[i + 1, 0]) i++;
+            float h = t[i + 1, 0] - t[i, 0], u = (s - t[i, 0]) / h, u2 = u * u, u3 = u2 * u;
+            return (2 * u3 - 3 * u2 + 1) * t[i, c] + (u3 - 2 * u2 + u) * h * m[i] + (-2 * u3 + 3 * u2) * t[i + 1, c] + (u3 - u2) * h * m[i + 1];
+        }
+
+        static float G(float l, float s, float cl, float cs, float sl, float ss) => Mathf.Exp(-Sq((l - cl) / sl) - Sq((s - cs) / ss));
+
+        /// <summary>Face relief (mm outward) at (|L|, S).</summary>
+        static float Relief(float a, float s)
+        {
+            float r = 3.5f * G(a, s, 23, 42, 12, 4.5f) + 1.5f * G(a, s, 0, 41, 8, 5) + 2 * G(a, s, 25, 70, 18, 15);   // brow, glabella, frontal eminence
+            r += -7 * G(a, s, 30, 29, 14, 10) + 9.5f * G(a, s, 31, 28, 11, 8) - 3 * G(a, s, 19, 29, 4, 5);              // orbit, closed lid over the globe, medial canthus
+            r += 3 * G(a, s, 30, 0, 15, 13) + 2.5f * G(a, s, 46, 12, 10, 8) - 4 * G(a, s, 63, 32, 8, 14);               // cheek, zygoma, temple
+            r += 1.5f * G(a, s, 27, -30, 8, 10);                                                                        // cheek over the fold
+            r += 5.2f * G(a, s, 0, -41, 14, 3.3f) + 0.9f * G(a, s, 4, -39.5f, 3, 1.5f);                                 // upper lip, Cupid's bow
+            r += 0.7f * G(a, s, 4.5f, -36, 2.4f, 4) - 0.4f * G(a, s, 0, -36, 2, 4);                                     // philtral columns, groove
+            r += 5 * G(a, s, 0, -50, 13, 3.6f) - 2.5f * G(a, s, 0, -59, 14, 3) + 3.5f * G(a, s, 0, -71, 14, 7);         // lower lip, mentolabial sulcus, chin
+            return r;
+        }
+
+        static float LidLine(float a) => 27.6f + 0.006f * Sq(a - 31);
+        static float MouthLine(float a) => -45.2f - 0.0035f * a * a;
+
+        static float Creases(float a, float s)
+        {
+            float c = -0.6f * Mathf.Exp(-Sq((s - LidLine(a)) / 0.5f)) * Mathf.Exp(-Sq(Sq((a - 31) / 8.5f)));              // closed lid line
+            c += -0.35f * Mathf.Exp(-Sq((s - 34.5f - 0.008f * Sq(a - 31)) / 0.9f)) * Mathf.Exp(-Sq(Sq((a - 31) / 9)));     // upper lid crease
+            c += -1.7f * Mathf.Exp(-Sq((s - MouthLine(a)) / 0.75f)) * Mathf.Exp(-Mathf.Pow(a / 23, 6));                     // mouth line
+            float lx = 17.5f + Mathf.Clamp01((s + 24) / -24f) * 9.5f;                                                      // nasolabial fold
+            c += -0.5f * Mathf.Exp(-Sq((a - lx) / 2.6f)) * Mathf.Exp(-Sq(Sq((s + 34) / 10)));
+            return c;
+        }
+
+        static float Nose(Vector3 p, Vector3 m)
+        {
+            float n = Dorsum(p);
+            float lb = SMin(LowerNose(p), Ala(m), 1.2f);
+            lb = SMin(lb, Ell(m, new Vector3(13.8f, -23, -77.5f), new Vector3(3.6f, 6, 4.5f)), 2);                    // alar base, set into the cheek
+            n = SMin(n, lb, 5);
+            n = SMin(n, Ell(p, new Vector3(0, -16, -95), new Vector3(8.6f, 8.6f, 8.5f)), 6);                           // lobule
+            n = SMin(n, Ell(m, new Vector3(4, -14, -97.5f), new Vector3(4, 4.6f, 6)), 2.5f);                            // domes
+            return SMin(n, Capsule(p, new Vector3(0, -24.8f, -95), new Vector3(0, -29, -82.5f), 3, 2.9f), 2.5f);        // columella
+        }
+
+        // Dorsal line radix -> supratip; the wedge's sidewalls open at 40 -> 33 degrees from the depth axis,
+        // its ridge is rounded with 3.5 -> 8 mm.
+        static readonly Vector3 DorsumA = new Vector3(0, 31, -79.5f), DorsumB = new Vector3(0, -13, -99.3f);
+
+        static float Dorsum(Vector3 p)
+        {
+            var ab = DorsumB - DorsumA; float len = ab.magnitude; var w = ab / len;
+            var dep = new Vector3(0, -w.z, w.y); if (dep.z < 0) dep = -dep;   // into the face, in the sagittal plane
+            var q = p - DorsumA;
+            float t = Vector3.Dot(q, w) / len, tc = Mathf.Clamp01(t);
+            float r = Mathf.Lerp(3.5f, 8f, tc), th = Mathf.Lerp(40f, 33f, tc) * Mathf.Deg2Rad;
+            float u = Mathf.Abs(q.x), depth = Vector3.Dot(q, dep), v = depth - r;
+            float dx = Mathf.Sin(th), dy = Mathf.Cos(th);
+            float k = Mathf.Max(u * dx + v * dy, 0), ex = u - k * dx, ey = v - k * dy;
+            float dist = Mathf.Sqrt(ex * ex + ey * ey);
+            float d = (u * dy - v * dx < 0 ? -dist : dist) - r;
+            d = Mathf.Max(Mathf.Max(d, depth - 20), -t * len);
+            return -SMin(-d, -(t - 1) * len, 6);
+        }
+
+        /// <summary>Lower nose: rounded triangle in the basal view (tip -> alar bases) standing on the nasal base,
+        /// which tilts up toward the tip.</summary>
+        static float LowerNose(Vector3 p)
+        {
+            float u = Mathf.Clamp01((p.y + 29) / 21);
+            float ay = -97.5f + 2.5f * u, bx = 11 - 5 * u, by = -77f, n = 2.2f;
+            float x = Mathf.Abs(p.x) / bx + 1e-6f, z = Mathf.Max(by - p.z, 0) / (by - ay) + 1e-6f;
+            float rho = Mathf.Pow(Mathf.Pow(x, n) + Mathf.Pow(z, n), 1 / n), k = Mathf.Pow(rho, 1 - n);
+            float gx = k * Mathf.Pow(x, n - 1) / bx, gz = k * Mathf.Pow(z, n - 1) / (by - ay);
+            float d2 = Mathf.Max((rho - 1) / Mathf.Sqrt(gx * gx + gz * gz), p.z - by - 6);
+            float h = Mathf.Max(-29.6f - 0.16f * (p.z + 80) - p.y, p.y + 8);
+            return Mathf.Min(Mathf.Max(d2, h), 0) + Mathf.Sqrt(Sq(Mathf.Max(d2, 0)) + Sq(Mathf.Max(h, 0)));
+        }
+
+        // Alar lobule and rim: a tube swept around the nostril from the soft triangle to the alar base (L, S, P, radius),
+        // taller than wide (S scaled by AlaTall).
+        static readonly Vector4[] AlaPath =
+        {
+            new Vector4(5.8f, -23.8f, -95.2f, 2.4f), new Vector4(9.4f, -24.4f, -93f, 2.7f), new Vector4(12.7f, -23.6f, -89.4f, 3.4f),
+            new Vector4(14.3f, -23.2f, -84.4f, 3.7f), new Vector4(14f, -25f, -80f, 3.3f),
+        };
+        const float AlaTall = 1.35f;
+        static Vector4[] _alaTube;
+
+        static float Ala(Vector3 m)
+        {
+            if (_alaTube == null) _alaTube = CatmullRom(AlaPath, 5);
+            var q = new Vector3(m.x, m.y / AlaTall, m.z);
+            float d = 1e9f;
+            for (int i = 0; i < _alaTube.Length - 1; i++)
+            {
+                Vector4 a = _alaTube[i], b = _alaTube[i + 1];
+                float c = Capsule(q, new Vector3(a.x, a.y / AlaTall, a.z), new Vector3(b.x, b.y / AlaTall, b.z), a.w, b.w);
+                d = i == 0 ? c : SMin(d, c, 0.8f);
+            }
+            return d;
+        }
+
+        static Vector4[] CatmullRom(Vector4[] k, int perSegment)
+        {
+            var o = new List<Vector4>();
+            for (int i = 0; i < k.Length - 1; i++)
+            {
+                Vector4 a = k[Mathf.Max(i - 1, 0)], b = k[i], c = k[i + 1], d = k[Mathf.Min(i + 2, k.Length - 1)];
+                for (int j = 0; j < perSegment; j++)
+                {
+                    float t = j / (float)perSegment, t2 = t * t, t3 = t2 * t;
+                    o.Add(0.5f * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3));
+                }
+            }
+            o.Add(k[k.Length - 1]);
+            return o.ToArray();
+        }
+
+        /// <summary>Teardrop nostril on the nasal base (wide end posterolateral) and the vestibule above it.</summary>
+        static float Nostril(Vector3 m)
+        {
+            float c = Capsule(m, new Vector3(9.2f, -28.4f, -84), new Vector3(6, -26.4f, -89.5f), 2.9f, 1.7f);
+            return SMin(c, Capsule(m, new Vector3(7.6f, -27.4f, -87), new Vector3(7.3f, -22.8f, -83.5f), 2.9f, 2.7f), 2);
         }
 
         /// <summary>
-        /// Skin colour multiplier at a skin point (L, S, P mm): lip vermilion, rosy nose tip and cheeks, eyebrows,
-        /// lash line, darker reddish nostril and vestibule lining.
+        /// Skin colour multiplier at a skin point (L, S, P mm): lip vermilion, rosy nose and cheeks, eyebrows,
+        /// lash line, darker reddish nostril and vestibule lining, mouth line.
         /// </summary>
         public static Color SkinTint(Vector3 p)
         {
             var m = new Vector3(Mathf.Abs(p.x), p.y, p.z);
+            float a = m.x, s = p.y;
             var c = Color.white;
-            float lip = Mathf.Min(EllR(p, new Vector3(0, -39, -74), new Vector3(17, 5.5f, 7), 0, -15),
-                                  EllR(p, new Vector3(0, -50, -71.5f), new Vector3(15, 5.5f, 7.5f), 0, 10));
-            lip = Mathf.Min(lip, Ell(m, new Vector3(4, -42.5f, -77.5f), new Vector3(5, 2.6f, 3.2f)));
-            c = Color.Lerp(c, new Color(0.86f, 0.6f, 0.64f), Mathf.Clamp01(1f - (lip + 0.5f) / 2f) * Mathf.Clamp01((-p.z - 70f) / 4f));
-            float rosy = Mathf.Exp(-(Sq(p.x) + Sq(p.y + 14) + Sq(p.z + 95)) / 150f) + 0.6f * Mathf.Exp(-(Sq(m.x - 30) + Sq(p.y + 12) + Sq(p.z + 72)) / 400f);
-            c *= Color.Lerp(Color.white, new Color(1f, 0.92f, 0.91f), Mathf.Clamp01(rosy));
-            float brow = Mathf.Exp(-(Sq(p.y - 43.5f + 0.004f * Sq(m.x - 26)) / 6f + Sq(m.x - 26) / 170f)) * Mathf.Clamp01((-p.z - 62f) / 6f);
-            float hairs = 0.55f + 0.45f * NasalAnatomy.Noise(m.x * 1.4f, p.y * 0.35f, p.z * 0.35f);
+            float faceFront = Mathf.Clamp01((-p.z - 62f) / 6f);
+            // Vermilion: from the mouth line up to the (Cupid's bow) border, and down over the lower lip.
+            float mouth = MouthLine(a), border = -38.9f + 0.6f * Mathf.Exp(-Sq((a - 4) / 2.5f)) - 0.006f * a * a;
+            float upper = Mathf.Clamp01((border - s) / 0.8f + 0.5f) * Mathf.Clamp01((s - mouth) / 0.8f + 0.5f);
+            float lower = Mathf.Clamp01((mouth - s) / 0.8f + 0.5f) * Mathf.Clamp01((s - (-54f + 0.008f * a * a)) / 2f + 0.5f);
+            float lipW = Mathf.Clamp01((24 - a) / 4f);
+            c = Color.Lerp(c, new Color(0.86f, 0.6f, 0.64f), Mathf.Max(upper, lower) * lipW * faceFront);
+            float rosy = Mathf.Exp(-(Sq(a / 9) + Sq((s + 15) / 9))) + 0.6f * Mathf.Exp(-(Sq((a - 30) / 20) + Sq((s + 12) / 20)));
+            c *= Color.Lerp(Color.white, new Color(1f, 0.92f, 0.91f), Mathf.Clamp01(rosy) * faceFront);
+            float brow = Mathf.Exp(-(Sq(s - 43.5f + 0.004f * Sq(a - 26)) / 6f + Sq(a - 26) / 170f)) * faceFront;
+            float hairs = 0.55f + 0.45f * NasalAnatomy.Noise(a * 1.4f, s * 0.35f, p.z * 0.35f);
             c = Color.Lerp(c, new Color(0.33f, 0.26f, 0.23f), Mathf.Clamp01(brow * 1.3f) * hairs);
-            float lash = Capsule(m, new Vector3(21, 27.2f, -77.3f), new Vector3(41, 27.6f, -72), 0.35f, 0.35f);
-            c = Color.Lerp(c, new Color(0.3f, 0.24f, 0.22f), 0.8f * Mathf.Clamp01(1f - lash / 1.2f));
-            float nostril = Mathf.Min(EllR(m, new Vector3(7.6f, -28.6f, -88), new Vector3(3f, 3.2f, 6.3f), -22, 0),
-                                      Capsule(m, new Vector3(7.6f, -27.5f, -90), new Vector3(8, -19, -68), 3.2f, 4.6f));
-            float deep = Mathf.Clamp01((p.y + 27f) / 6f);
+            float lash = Mathf.Exp(-Sq((s - LidLine(a)) / 0.6f)) * Mathf.Exp(-Sq(Sq((a - 31) / 9.5f)));
+            c = Color.Lerp(c, new Color(0.3f, 0.24f, 0.22f), 0.8f * lash * faceFront);
+            float nostril = Nostril(m), deep = Mathf.Clamp01((s + 27f) / 6f);
             c = Color.Lerp(c, new Color(0.7f, 0.46f, 0.46f) * (1f - 0.45f * deep), Mathf.Clamp01(1f - nostril / 1.5f));
-            float mouth = EllR(p, new Vector3(0, -45.2f, -84), new Vector3(20, 0.7f, 12), 0, 0);
-            c = Color.Lerp(c, new Color(0.45f, 0.3f, 0.3f), Mathf.Clamp01(1f - mouth / 1.2f));
+            c = Color.Lerp(c, new Color(0.45f, 0.3f, 0.3f), Mathf.Exp(-Sq((s - mouth) / 0.6f)) * lipW * faceFront);
             c.a = 1;
             return c;
         }

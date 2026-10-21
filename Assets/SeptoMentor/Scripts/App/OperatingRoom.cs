@@ -211,8 +211,8 @@ namespace SeptoMentor
             Prim(PrimitiveType.Sphere, new Vector3(0, 0.05f, -0.035f), new Vector3(0.165f, 0.19f, 0.2f), towel, null, PatientHead);
             // Eye protection tape.
             var tape = Mat(new Color(0.9f, 0.92f, 0.95f), 0.6f);
-            Box(new Vector3(0.031f, 0.029f, 0.0785f), new Vector3(0.026f, 0.012f, 0.0015f), tape, PatientHead);
-            Box(new Vector3(-0.031f, 0.029f, 0.0785f), new Vector3(0.026f, 0.012f, 0.0015f), tape, PatientHead);
+            Box(new Vector3(0.031f, 0.029f, 0.079f), new Vector3(0.026f, 0.012f, 0.0015f), tape, PatientHead);
+            Box(new Vector3(-0.031f, 0.029f, 0.079f), new Vector3(0.026f, 0.012f, 0.0015f), tape, PatientHead);
             // Oral RAE tube out of the mouth toward the chest.
             var tube = Mat(new Color(0.85f, 0.88f, 0.9f), 0.8f);
             var a = new Vector3(0.0f, -0.046f, 0.075f);
