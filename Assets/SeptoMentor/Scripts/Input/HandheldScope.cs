@@ -25,7 +25,7 @@ namespace SeptoMentor
         public XRNode hand = XRNode.LeftHand;
 
         /// <summary>(message, severity) for the monitor / speech.</summary>
-        public event Action<string, Severity> Hint;
+        public event Action<string, string, Severity> Hint;   // voice key, message, severity
 
         public bool Active { get; private set; }
         public bool InNose { get; private set; }
@@ -114,7 +114,7 @@ namespace SeptoMentor
             if (!_sideKnown && patient.AnatomyRoot != null)
             {
                 // Use the nostril on the same side as the anatomy's scope path (the head frame is mirrored into it).
-                _rightNostril = patient.PhantomAligned || patient.pathStart.x < patient.LocalBounds.center.x;
+                _rightNostril = patient.PhantomAligned ? NasalAnatomy.Mirror > 0 : patient.pathStart.x < patient.LocalBounds.center.x;
                 _nostril = OperatingRoom.Nostril(_rightNostril);
                 _sideKnown = true;
             }
@@ -133,7 +133,7 @@ namespace SeptoMentor
             if (!InNose && Time.time > _nextHint && tipH.magnitude < 0.25f)
             {
                 _nextHint = Time.time + 10f;
-                Hint?.Invoke($"Guide the scope into the patient's {(_rightNostril ? "right" : "left")} nostril, along the nasal floor.", Severity.Tip);
+                Hint?.Invoke("scope_guide", $"Guide the scope into the patient's {(_rightNostril ? "right" : "left")} nostril, along the nasal floor.", Severity.Tip);
             }
         }
 
@@ -148,7 +148,7 @@ namespace SeptoMentor
             if (Time.time - _touchSince > 1.2f && Time.time > _nextHint)
             {
                 _nextHint = Time.time + 6f;
-                Hint?.Invoke("The scope tip is rubbing the mucosa - pull back slightly and keep it centred (bleeding, smeared lens).", Severity.Caution);
+                Hint?.Invoke("scope_rub", "The scope tip is rubbing the mucosa - pull back slightly and keep it centred (bleeding, smeared lens).", Severity.Caution);
             }
         }
     }

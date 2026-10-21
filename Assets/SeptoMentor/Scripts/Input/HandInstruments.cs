@@ -24,8 +24,8 @@ namespace SeptoMentor
         [Tooltip("Grip to instrument tip, m.")]
         public float reach = 0.19f;
 
-        /// <summary>(message, severity) for the monitor / speech.</summary>
-        public event Action<string, Severity> Hint;
+        /// <summary>(voice key, message, severity) for the monitor / voice.</summary>
+        public event Action<string, string, Severity> Hint;
 
         public static readonly Structure[] Tools = { Structure.Scalpel, Structure.FreerElevator, Structure.ScissorsForceps, Structure.Suction };
 
@@ -86,6 +86,15 @@ namespace SeptoMentor
             return m;
         }
 
+        /// <summary>Voice command: take this instrument (handing back the one in the hand), or Background = hand it back.</summary>
+        public void Request(Structure s)
+        {
+            int i = Array.IndexOf(Tools, s);
+            if (i == _held) return;
+            Release();
+            if (i >= 0) Take(i);
+        }
+
         /// <summary>B button: hand back the current instrument and take the next one (none -> scalpel -> ... -> none).</summary>
         public Structure Cycle()
         {
@@ -100,7 +109,7 @@ namespace SeptoMentor
             _held = i;
             _tools[i].returning = -1;
             Haptics.Pulse(hand, 0.4f, 0.04f);
-            Hint?.Invoke(InstrumentModels.DisplayName(Tools[i]) + Usage(Tools[i]), Severity.Info);
+            Hint?.Invoke("tool_" + Tools[i], InstrumentModels.DisplayName(Tools[i]) + Usage(Tools[i]), Severity.Info);
         }
 
         static string Usage(Structure s)

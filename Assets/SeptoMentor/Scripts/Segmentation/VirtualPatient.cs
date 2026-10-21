@@ -81,13 +81,14 @@ namespace SeptoMentor
                 if (g.structure != Structure.Background) go.AddComponent<MeshCollider>().sharedMesh = g.mesh;
                 var p = AddPart(go, g.structure, true);
                 p.tissueColor = g.tint;
+                p.vertexLook = g.mesh.colors.Length > 0;
                 if (g.structure == Structure.Background) p.wetness = 0.25f;   // vestibular skin, hairs
                 p.Apply();
                 if (g.phaseMask != 0x1F) _phased.Add(new KeyValuePair<GameObject, int>(go, g.phaseMask));
             }
             pathStart = NasalAnatomy.PathStart;
             pathEnd = NasalAnatomy.PathEnd;
-            scopeYaw = 6f;   // slightly toward the septum
+            scopeYaw = -6f * NasalAnatomy.Mirror;   // slightly toward the septum (left cavity: septum is toward -X)
             SetPhase(_phase);
         }
 

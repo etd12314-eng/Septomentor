@@ -13,7 +13,9 @@ namespace SeptoMentor
     /// </summary>
     public partial class OperatingRoom : MonoBehaviour
     {
-        public Shader surfaceShader, shadowShader;
+        public Shader surfaceShader, shadowShader, skinShader;
+        [Tooltip("Baked by SceneBuilder (PatientModel). Null: the head is meshed at runtime and the body is simple shapes.")]
+        public Mesh headMesh, drapeMesh;
 
         /// <summary>Where the video monitor's centre goes (top of the endoscopy tower, across the table).</summary>
         public static readonly Vector3 MonitorPosition = new Vector3(0.25f, 1.62f, 1.18f);
@@ -27,7 +29,7 @@ namespace SeptoMentor
         public Transform PatientHead { get; private set; }
 
         /// <summary>Nostril entrance in the head frame (phantom geometry).</summary>
-        public static Vector3 Nostril(bool right) => new Vector3(right ? 0.0075f : -0.0075f, -0.026f, 0.088f);
+        public static Vector3 Nostril(bool right) => new Vector3(right ? 0.0076f : -0.0076f, -0.0283f, 0.088f);
 
         Transform _root;
         Task<SurfaceNets> _headTask;
@@ -53,22 +55,40 @@ namespace SeptoMentor
             PatientHead.SetParent(transform, false);
             PatientHead.SetPositionAndRotation(HeadPosition, Quaternion.LookRotation(Vector3.up, Vector3.left));
             BuildHeadAccessories();
-            _headTask = Task.Run(() => HeadSurface());
+            if (headMesh != null) AddHead(headMesh);
+            else _headTask = Task.Run(() => HeadSurface());
+            if (drapeMesh != null)
+            {
+                var drape = new GameObject("PatientDrape");
+                drape.transform.SetParent(PatientHead, false);
+                drape.AddComponent<MeshFilter>().sharedMesh = drapeMesh;
+                drape.AddComponent<MeshRenderer>().sharedMaterial = Mat(new Color(0.22f, 0.42f, 0.62f), 0.1f);
+            }
         }
 
         void Update()
         {
             UpdateLife();
             if (_headTask == null || !_headTask.IsCompleted) return;
-            if (_headTask.Status == TaskStatus.RanToCompletion)
-            {
-                var go = new GameObject("HeadSkin");
-                go.transform.SetParent(PatientHead, false);
-                go.AddComponent<MeshFilter>().sharedMesh = _headTask.Result.ToMesh("PatientHead");
-                go.AddComponent<MeshRenderer>().sharedMaterial = Mat(new Color(0.86f, 0.66f, 0.56f), 0.25f);
-            }
+            if (_headTask.Status == TaskStatus.RanToCompletion) AddHead(_headTask.Result.ToMesh("PatientHead"));
             else Debug.LogError("[SeptoMentor] head surface failed: " + _headTask.Exception);
             _headTask = null;
+        }
+
+        void AddHead(Mesh mesh)
+        {
+            var go = new GameObject("HeadSkin");
+            go.transform.SetParent(PatientHead, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var skin = skinShader != null ? skinShader : Shader.Find("SeptoMentor/ORSkin");
+            Material mat;
+            if (skin != null && mesh.colors.Length > 0)
+            {
+                mat = new Material(skin);
+                mat.SetColor("_Color", new Color(0.88f, 0.69f, 0.6f));
+            }
+            else mat = Mat(new Color(0.86f, 0.66f, 0.56f), 0.25f);
+            go.AddComponent<MeshRenderer>().sharedMaterial = mat;
         }
 
         /// <summary>Moves the XR origin so the user stands at the surgeon's spot, facing the table.</summary>
@@ -172,11 +192,14 @@ namespace SeptoMentor
             Box(new Vector3(0.75f, 0.86f, 0.45f), new Vector3(2.1f, 0.08f, 0.56f), dark);
             Prim(PrimitiveType.Cylinder, new Vector3(-0.15f, 0.905f, 0.45f), new Vector3(0.2f, 0.012f, 0.2f), Mat(new Color(0.2f, 0.45f, 0.75f), 0.5f));
 
-            // Draped patient: shoulders, chest, legs; side drapes hang to mid-height.
-            Prim(PrimitiveType.Sphere, new Vector3(0.08f, 0.99f, 0.45f), new Vector3(0.34f, 0.16f, 0.46f), drape);
-            Prim(PrimitiveType.Sphere, new Vector3(0.5f, 1.02f, 0.45f), new Vector3(0.65f, 0.22f, 0.48f), drape);
-            Prim(PrimitiveType.Sphere, new Vector3(1.3f, 0.98f, 0.45f), new Vector3(0.95f, 0.14f, 0.38f), drape);
-            Box(new Vector3(0.8f, 0.92f, 0.45f), new Vector3(1.9f, 0.04f, 0.74f), drape);
+            // Draped patient (simple shapes unless the baked body drape is present); side drapes hang to mid-height.
+            if (drapeMesh == null)
+            {
+                Prim(PrimitiveType.Sphere, new Vector3(0.08f, 0.99f, 0.45f), new Vector3(0.34f, 0.16f, 0.46f), drape);
+                Prim(PrimitiveType.Sphere, new Vector3(0.5f, 1.02f, 0.45f), new Vector3(0.65f, 0.22f, 0.48f), drape);
+                Prim(PrimitiveType.Sphere, new Vector3(1.3f, 0.98f, 0.45f), new Vector3(0.95f, 0.14f, 0.38f), drape);
+                Box(new Vector3(0.8f, 0.92f, 0.45f), new Vector3(1.9f, 0.04f, 0.74f), drape);
+            }
             Box(new Vector3(0.8f, 0.66f, 0.08f), new Vector3(1.9f, 0.52f, 0.015f), drape);
             Box(new Vector3(0.8f, 0.66f, 0.82f), new Vector3(1.9f, 0.52f, 0.015f), drape);
         }
@@ -188,8 +211,8 @@ namespace SeptoMentor
             Prim(PrimitiveType.Sphere, new Vector3(0, 0.05f, -0.035f), new Vector3(0.165f, 0.19f, 0.2f), towel, null, PatientHead);
             // Eye protection tape.
             var tape = Mat(new Color(0.9f, 0.92f, 0.95f), 0.6f);
-            Box(new Vector3(0.031f, 0.029f, 0.072f), new Vector3(0.028f, 0.014f, 0.002f), tape, PatientHead);
-            Box(new Vector3(-0.031f, 0.029f, 0.072f), new Vector3(0.028f, 0.014f, 0.002f), tape, PatientHead);
+            Box(new Vector3(0.031f, 0.029f, 0.0785f), new Vector3(0.026f, 0.012f, 0.0015f), tape, PatientHead);
+            Box(new Vector3(-0.031f, 0.029f, 0.0785f), new Vector3(0.026f, 0.012f, 0.0015f), tape, PatientHead);
             // Oral RAE tube out of the mouth toward the chest.
             var tube = Mat(new Color(0.85f, 0.88f, 0.9f), 0.8f);
             var a = new Vector3(0.0f, -0.046f, 0.075f);

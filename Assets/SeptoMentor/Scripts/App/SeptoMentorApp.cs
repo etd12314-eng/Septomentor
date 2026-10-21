@@ -19,6 +19,8 @@ namespace SeptoMentor
         public HandheldScope scope;
         public HandInstruments hands;
         public SeptoplastySim sim;
+        public VoiceCoach voice;
+        public VoiceCommands commands;
         public Transform head;
         [Tooltip("Parent of monitor + hologram; moved by Recenter.")]
         public Transform userRig;
@@ -36,16 +38,11 @@ namespace SeptoMentor
             input.Recenter += DoRecenter;
             input.AskAI += OnAsk;
             input.ToggleLabels += () => overlay.ToggleLabels();
-            input.ToggleScope += () =>
-            {
-                if (scope == null) return;
-                scope.handheld = !scope.handheld;
-                overlay.ShowMentor(scope.handheld ? "Hand-held scope: the left controller is the endoscope." : "Scope on autopilot / thumbsticks.", Severity.Info, 3f);
-                logger.Log("input", mentor.Phase.ToString(), null, null, "scope mode " + (scope.handheld ? "hand-held" : "auto"));
-            };
-            if (scope != null) scope.Hint += (msg, sev) => OnHint("scope", msg, sev);
-            if (hands != null) hands.Hint += (msg, sev) => OnHint("instrument", msg, sev);
-            if (sim != null) sim.Hint += (msg, sev) => OnHint("tissue", msg, sev);
+            input.ToggleScope += () => SetScope(scope == null || !scope.handheld);
+            if (scope != null) scope.Hint += (key, msg, sev) => OnHint("scope", key, msg, sev);
+            if (hands != null) hands.Hint += (key, msg, sev) => OnHint("instrument", key, msg, sev);
+            if (sim != null) sim.Hint += (key, msg, sev) => OnHint("tissue", key, msg, sev);
+            if (commands != null) commands.Command += OnVoiceCommand;
             input.SimulateTear += () =>
             {
                 if (Synthetic != null && Synthetic.SimulateTear()) logger.Log("input", mentor.Phase.ToString(), null, null, "simulated mucosal tear");
@@ -65,7 +62,8 @@ namespace SeptoMentor
                 overlay.ShowMentor(e.message, e.severity);
                 logger.LogMentor(e);
                 ai.RememberEvent(e);
-                if (e.severity >= Severity.Caution) speech.Speak(e.message);
+                // Phase briefs are spoken when the resident changed phase; a completed step already announced the next one.
+                if (!e.ruleId.StartsWith("phase_") || _manualPhase) Speak(e.ruleId, e.message, e.severity);
                 if (e.severity == Severity.Warning) ai.Coach("warning", e);
             };
             ai.Answer += (kind, text) =>
@@ -87,17 +85,66 @@ namespace SeptoMentor
         }
 
         bool _manualPhase = true;
+        string _voiceStatus;
         string _progress;
 
         string PhaseLine(SurgicalPhase p, bool manual) =>
             $"Phase: {p}{(manual ? "" : " (auto)")}" + (sim != null && sim.Available && sim.Progress.Length > 0 ? "  -  " + sim.Progress : "") +
             $"   [A next  B instrument  X recenter{(ai.Configured ? "  Y ask" : "")}]";
 
-        void OnHint(string source, string msg, Severity sev)
+        void OnHint(string source, string key, string msg, Severity sev)
         {
             overlay.ShowMentor(msg, sev, sev >= Severity.Caution ? 5f : 4f);
-            logger.Log(source, mentor.Phase.ToString(), null, sev.ToString(), msg);
-            if (sev >= Severity.Caution || source == "tissue") speech.Speak(msg);
+            logger.Log(source, mentor.Phase.ToString(), key, sev.ToString(), msg);
+            Speak(key, msg, sev);
+        }
+
+        /// <summary>Turkish voice clip for the key when there is one; otherwise English TTS for cautions and warnings.</summary>
+        void Speak(string key, string msg, Severity sev)
+        {
+            if (voice != null) voice.Say(key, msg, sev);
+            else if (sev >= Severity.Caution) speech.Speak(msg);
+        }
+
+        void SetScope(bool handheld)
+        {
+            if (scope == null) return;
+            scope.handheld = handheld;
+            overlay.ShowMentor(handheld ? "Hand-held scope: the left controller is the endoscope." : "Scope on autopilot / thumbsticks.", Severity.Info, 3f);
+            voice?.Say(handheld ? "scope_hand" : "scope_auto", null);
+            logger.Log("input", mentor.Phase.ToString(), null, null, "scope mode " + (handheld ? "hand-held" : "auto"));
+        }
+
+        void OnVoiceCommand(VoiceCommand cmd, string heard)
+        {
+            logger.Log("voice", mentor.Phase.ToString(), cmd.ToString(), null, heard);
+            overlay.ShowMentor($"Voice: \"{Display(heard)}\"", Severity.Info, 2f);
+            switch (cmd)
+            {
+                case VoiceCommand.Next: mentor.NextPhase(); break;
+                case VoiceCommand.Previous: if (mentor.Phase > SurgicalPhase.Setup) mentor.SetPhase(mentor.Phase - 1, true); break;
+                case VoiceCommand.Restart: voice?.Say("restart", null); mentor.SetPhase(SurgicalPhase.Setup, true); break;
+                case VoiceCommand.Scalpel: hands?.Request(Structure.Scalpel); break;
+                case VoiceCommand.Elevator: hands?.Request(Structure.FreerElevator); break;
+                case VoiceCommand.Forceps: hands?.Request(Structure.ScissorsForceps); break;
+                case VoiceCommand.Suction: hands?.Request(Structure.Suction); break;
+                case VoiceCommand.Release: hands?.Request(Structure.Background); voice?.Say("tool_none", null); break;
+                case VoiceCommand.LabelsOn: overlay.SetLabels(true); voice?.Say("labels_on", null); break;
+                case VoiceCommand.LabelsOff: overlay.SetLabels(false); voice?.Say("labels_off", null); break;
+                case VoiceCommand.Recenter: DoRecenter(); voice?.Say("recenter", null); break;
+                case VoiceCommand.Status:
+                    int pct = sim != null ? Mathf.Clamp(Mathf.RoundToInt(sim.ProgressFraction * 10f) * 10, 0, 100) : 0;
+                    voice?.SayAll("name_" + mentor.Phase, "pct_" + pct);
+                    break;
+                case VoiceCommand.Hint: voice?.SayAll("phase_" + mentor.Phase); break;
+                case VoiceCommand.Repeat: voice?.Repeat(); break;
+                case VoiceCommand.Mute: voice?.Say("voice_off", null); if (voice != null) voice.muted = true; break;
+                case VoiceCommand.Unmute: if (voice != null) voice.muted = false; voice?.Say("voice_on", null); break;
+                case VoiceCommand.ScopeHand: SetScope(true); break;
+                case VoiceCommand.ScopeAuto: SetScope(false); break;
+                case VoiceCommand.Ask: if (ai.Configured) OnAsk(); else voice?.Say("no_ai", null); break;
+                case VoiceCommand.Help: voice?.SayAll("help"); break;
+            }
         }
 
         string ControlsCard() =>
@@ -106,7 +153,7 @@ namespace SeptoMentor
             "B  change instrument\n" +
             "X  recenter view\n" +
             (ai.Configured ? "Y  ask the AI mentor\n" : "Y  (AI mentor off in this build)\n") +
-            (scope != null ? "LEFT controller = endoscope: into the right nostril of the patient\n" +
+            (scope != null ? "LEFT controller = endoscope: into the LEFT nostril of the patient\n" +
                              "Left stick click  hand-held scope / autopilot\n" : "") +
             (hands != null ? "RIGHT hand = instruments (Mayo stand on your right)\n" +
                              "  Grip over an instrument: take it   Grip again: hand it back\n" +
@@ -114,7 +161,13 @@ namespace SeptoMentor
                              "  Scalpel: incision line   Freer: lift the flap   Forceps: deviated cartilage\n" : "") +
             "Right stick  look around (autopilot)\n" +
             "Left stick  advance / withdraw scope (autopilot)\n" +
-            "Right stick click  labels on/off";
+            "Right stick click  labels on/off\n" +
+            (commands != null ? Display("VOICE (Turkish): sonraki adım / önceki adım / neşter ver / kaldırıcı ver / makas ver / emme ver /\n" +
+                                        "  aleti bırak / etiket aç-kapat / merkeze al / durum nedir / ne yapmalıyım / tekrar / sesi kapat-aç / yardım") : "");
+
+        /// <summary>The monitor font has no dotless i, s-cedilla or g-breve: show them as plain letters.</summary>
+        static string Display(string t) =>
+            t.Replace('ı', 'i').Replace('ş', 's').Replace('ğ', 'g').Replace('İ', 'I').Replace('Ş', 'S').Replace('Ğ', 'G');
 
         void Update()
         {
@@ -123,6 +176,11 @@ namespace SeptoMentor
             syn.manualLook = input.Look;
             syn.manualAdvance = input.Advance;
             if (syn.Instrument != null) syn.Instrument.rollInput = input.Twist;
+            if (commands != null && commands.Status != _voiceStatus)
+            {
+                _voiceStatus = commands.Status;
+                overlay.ShowMentor(Display(_voiceStatus), Severity.Info, 4f);
+            }
             var line = PhaseLine(mentor.Phase, _manualPhase);
             if (line != _progress) { _progress = line; overlay.SetPhase(line); }
         }

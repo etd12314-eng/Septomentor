@@ -72,6 +72,8 @@ namespace SeptoMentor.EditorTools
             var room = new GameObject("OperatingRoom").AddComponent<OperatingRoom>();
             room.surfaceShader = Shader.Find("SeptoMentor/ORSurface");
             room.shadowShader = Shader.Find("SeptoMentor/ORShadow");
+            room.skinShader = Shader.Find("SeptoMentor/ORSkin");
+            BakePatient(room);
             var userRig = new GameObject("UserRig").transform;
             userRig.position = OperatingRoom.MonitorPosition;
             var monitor = new GameObject("Monitor").transform;
@@ -101,6 +103,11 @@ namespace SeptoMentor.EditorTools
             var hands = sys.AddComponent<HandInstruments>();
             hands.provider = provider; hands.room = room; hands.sim = sim; hands.head = camGo.transform;
             app.hands = hands; app.sim = sim;
+            var voice = sys.AddComponent<VoiceCoach>();
+            voice.speech = speech;
+            var commands = sys.AddComponent<VoiceCommands>();
+            commands.voice = voice;
+            app.voice = voice; app.commands = commands;
 
             sys.AddComponent<ModeSwitch>().gripsReturn = false;   // hold the left menu button: back to the menu
 
@@ -112,7 +119,7 @@ namespace SeptoMentor.EditorTools
             EditorBuildSettings.scenes = AllScenes.Select(p => new EditorBuildSettingsScene(p, true)).ToArray();
             AlwaysIncludeShaders("SeptoMentor/EndoTissue", "SeptoMentor/LabelId", "SeptoMentor/MonitorComposite", "SeptoMentor/Ghost",
                                  "SeptoMentor/CtSlice", "SeptoMentor/NavGhost", "SeptoMentor/NavMarker", "SeptoMentor/ORSurface",
-                                 "SeptoMentor/ORShadow", "Unlit/Texture");
+                                 "SeptoMentor/ORShadow", "SeptoMentor/ORSkin", "Unlit/Texture");
         }
 
         /// <summary>XR origin + camera. Passthrough = transparent clear + AR Foundation camera manager (Meta OpenXR).</summary>
@@ -182,8 +189,28 @@ namespace SeptoMentor.EditorTools
         }
 
         const string NasalAnatomyPath = "Assets/SeptoMentor/Generated/NasalAnatomy.asset";
+        const string PatientPath = "Assets/SeptoMentor/Generated/Patient.asset";
 
         /// <summary>Meshes the procedural nasal cavity (NasalAnatomy) into one asset with a mesh per part.</summary>
+        /// <summary>Patient head (1.25 mm, vertex-coloured) and draped body for the operating room, as mesh assets.</summary>
+        static void BakePatient(OperatingRoom room)
+        {
+            try
+            {
+                var t0 = DateTime.Now;
+                var head = PatientModel.BuildHead();
+                var drape = PatientModel.BuildDrape();
+                Directory.CreateDirectory(Path.GetDirectoryName(PatientPath));
+                AssetDatabase.DeleteAsset(PatientPath);
+                AssetDatabase.CreateAsset(head, PatientPath);
+                AssetDatabase.AddObjectToAsset(drape, PatientPath);
+                AssetDatabase.SaveAssets();
+                room.headMesh = head; room.drapeMesh = drape;
+                Debug.Log($"[SeptoMentor] Patient baked: head {head.vertexCount} vertices, drape {drape.vertexCount} vertices, {(DateTime.Now - t0).TotalSeconds:0.0} s");
+            }
+            catch (Exception e) { Debug.LogError("[SeptoMentor] Patient bake failed: " + e); }
+        }
+
         static System.Collections.Generic.List<VirtualPatient.GeneratedPart> BakeNasalAnatomy()
         {
             var list = new System.Collections.Generic.List<VirtualPatient.GeneratedPart>();
@@ -202,6 +229,8 @@ namespace SeptoMentor.EditorTools
                         indexFormat = p.verts.Count > 65000 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16,
                     };
                     m.SetVertices(p.verts);
+                    m.SetColors(p.colors);
+                    m.SetUVs(0, p.uvs);
                     m.SetTriangles(p.tris, 0);
                     m.RecalculateNormals();
                     m.RecalculateBounds();

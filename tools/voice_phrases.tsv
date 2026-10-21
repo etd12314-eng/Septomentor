@@ -1,0 +1,66 @@
+# key	Turkish phrase (spoken by the VR trainer; clips made by tools/make_voice.py with Piper tr_TR-dfki-medium)
+phase_Setup	Hazırlık. Endoskopla kaudal septumu, konkaları ve burun tabanını tanıyın.
+phase_Incision	İnsizyon. Mukoperikondriyumu kıkırdağa kadar kesin, kıkırdağı kesmeyin.
+phase_FlapElevation	Flep kaldırma. Perikondriyumun altında kalın. Flebin altında mavimsi beyaz kıkırdak görmelisiniz.
+phase_Resection	Rezeksiyon. Sadece deviye kısmı çıkarın. Yaklaşık on milimetrelik L desteği bırakın.
+phase_Closure	Kapanış. Flepleri yırtık açısından kontrol edin ve yerine yatırın.
+name_Setup	Hazırlık aşamasındasınız.
+name_Incision	İnsizyon aşamasındasınız.
+name_FlapElevation	Flep kaldırma aşamasındasınız.
+name_Resection	Rezeksiyon aşamasındasınız.
+name_Closure	Kapanış aşamasındasınız.
+pct_0	Henüz başlamadınız.
+pct_10	Yüzde on tamamlandı.
+pct_20	Yüzde yirmi tamamlandı.
+pct_30	Yüzde otuz tamamlandı.
+pct_40	Yüzde kırk tamamlandı.
+pct_50	Yarısı tamamlandı.
+pct_60	Yüzde altmış tamamlandı.
+pct_70	Yüzde yetmiş tamamlandı.
+pct_80	Yüzde seksen tamamlandı.
+pct_90	Neredeyse bitti, yüzde doksan.
+pct_100	Bu adım tamamlandı.
+done_FlapElevation	İnsizyon tamam. Kaldırıcıyı alın ve flebi perikondriyumun altından kaldırın.
+done_Resection	Flep kaldırıldı. Kesici makası alın ve deviye kıkırdağı ısırarak çıkarın. L desteği koruyun.
+done_Closure	Deviye kıkırdak çıkarıldı, L destek sağlam. Flebi kaldırıcı ya da aspiratörle yerine yatırın.
+done_all	Flep yerine yatırıldı. Septoplasti tamamlandı. Sonuçlar monitörde.
+inc_deep	Çok derin! Bıçak kıkırdağı geçiyor, karşı flep risk altında. Sadece mukoperikondriyumu kesin.
+tear_scalpel_flap	Dikkat! Bistüri insizyon hattı dışında flebi kesti. Mukozal yırtık.
+tear_elev	Dikkat! Kaldırıcı sağlam mukozayı deldi. İnsizyondan girin ve perikondriyumun altında kalın.
+elev_noinc	Önce bistüriyle insizyon yapın, sonra flebi oradan kaldırın.
+elev_deep	Kaldırıcı kıkırdağa batıyor. Ucu kıkırdak yüzeyinde düz tutun.
+tear_bite_flap	Dikkat! Makas kaldırılmamış mukozayı ısırdı. Önce bu bölgede flebi kaldırın.
+contra	Dikkat! Isırık karşı taraf mukoperikondriyumunu geçti. Septal perforasyon riski.
+strut_dorsal	Dur! Burası dorsal destek. En az on milimetre koruyun. Isırık alınmadı.
+strut_caudal	Dur! Burası kaudal destek. En az on milimetre koruyun. Isırık alınmadı.
+outside	Bu kıkırdak deviye değil, çıkarmaya gerek yok.
+tear_scalpel_wall	Dikkat! Bistüri konkayı kesti, kanama var. Bıçağı septumda tutun.
+tear_bite_wall	Dikkat! Makas yan duvarı ısırdı. Sadece kaldırılmış flebin altındaki kıkırdağı ısırın.
+bone	Kemik septum. Keskin kesin, asla döndürmeyin. Kafa tabanı riski.
+force	Çok fazla baskı uyguluyorsunuz.
+mucosal_tear	Mukozal yırtık görülüyor. Karşı tarafta aynı seviyede yırtıktan kaçının.
+turbinate	Alet konkaya çok yakın. Konka mukozasını koruyun.
+plane_ok	İyi plan. Flebin altında çıplak kıkırdak görülüyor.
+plane_lost	Çıplak kıkırdak görünmüyor. Perikondriyumun üstünde olabilirsiniz.
+l_strut	Kaudal septuma yakın kesiyorsunuz. L desteği koruyun.
+ppe_torque	Perpendiküler plakada döndürmek kafa tabanına güç iletebilir. Keskin kesin.
+ppe_near	Perpendiküler plakadasınız. Kesin, döndürmeyin.
+scope_rub	Endoskop ucu mukozaya sürtünüyor. Hafifçe geri çekin ve ortada tutun.
+scope_guide	Endoskopu hastanın sol burun deliğinden, burun tabanı boyunca ilerletin.
+tool_Scalpel	Bistüri. İnsizyon hattı boyunca kıkırdağa kadar çekin.
+tool_FreerElevator	Kaldırıcı. İnsizyondan girip kıkırdak üzerinde süpürün.
+tool_ScissorsForceps	Kesici makas. Tetikle ısırın.
+tool_Suction	Aspiratör. Tetikle kanamayı temizleyin.
+tool_none	Alet masaya bırakıldı.
+cmd_unknown	Anlaşılmadı, tekrar söyleyin.
+voice_on	Sesli uyarılar açık.
+voice_off	Sesli uyarılar kapatıldı.
+labels_on	Etiketler açık.
+labels_off	Etiketler kapalı.
+recenter	Görüş ortalandı.
+scope_hand	Endoskop elde.
+scope_auto	Endoskop otomatik pilotta.
+restart	Baştan başlıyoruz.
+no_ai	Yapay zeka mentoru bu sürümde kapalı.
+voice_ready	Sesli komutlar hazır. Komutları duymak için yardım deyin.
+help	Komutlar: sonraki adım, önceki adım, baştan başla. Neşter ver, kaldırıcı ver, makas ver, emme ver, aleti bırak. Etiket aç, etiket kapat, merkeze al. Durum, ne yapmalıyım, tekrar. Sesi kapat, sesi aç. Kamera elde, kamera otomatik.

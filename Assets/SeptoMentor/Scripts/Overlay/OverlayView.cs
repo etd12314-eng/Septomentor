@@ -131,5 +131,6 @@ namespace SeptoMentor
         public void ShowSidePanel(string text) => _ai.Set(text, new Color(0.85f, 0.88f, 0.92f));
 
         public void ToggleLabels() => showLabels = !showLabels;
+        public void SetLabels(bool on) => showLabels = on;
     }
 }

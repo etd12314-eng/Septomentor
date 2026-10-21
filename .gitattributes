@@ -8,3 +8,6 @@
 *.prefab text eol=lf merge=unityyamlmerge
 *.asset text eol=lf merge=unityyamlmerge
 *.meta text eol=lf
+*.so binary
+*.wav binary
+Assets/StreamingAssets/vosk-model-small-tr/** binary

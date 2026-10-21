@@ -16,8 +16,14 @@ namespace SeptoMentor
     /// bluish-white cartilage at runtime), resection window cartilage (bitten out chunk by chunk, keeping a
     /// ~10 mm L-strut) with the contralateral mucoperichondrium behind it.
     ///
-    /// Frame: the CT phantom's (L, S, P), in metres in the VirtualPatient's local space
+    /// The cavity is the patient's LEFT side (left-nostril approach). The field is written for the right side
+    /// ("work frame") and mirrored at the end: L_patient = Mirror * L_work. Everything public that takes or returns
+    /// millimetres (Depth, SeptumFace, the flap constants) is in the work frame.
+    /// Frame of the meshes: the CT phantom's (L, S, P), in metres in the VirtualPatient's local space
     /// (+X patient-left, +Y superior, +Z posterior), so the nostril sits exactly where the OR head's is.
+    /// Surface detail: superior turbinate, uncinate process and agger nasi, septal swell body, Hasner's valve,
+    /// Eustachian orifices, adenoid tissue, corrugated turbinates and mucosal micro-relief; per-vertex colour
+    /// (Little's area, congested turbinates, paler upper walls, mucus) and vessel / wetness weights in uv.
     /// Generated in the editor (SceneBuilder) and stored as mesh assets.
     /// </summary>
     public static class NasalAnatomy
@@ -30,14 +36,24 @@ namespace SeptoMentor
             public int phaseMask;
             public readonly List<Vector3> verts = new List<Vector3>();
             public readonly List<int> tris = new List<int>();
+            public readonly List<Color> colors = new List<Color>();
+            public readonly List<Vector2> uvs = new List<Vector2>();   // x = vessel density, y = wetness (1 = default)
+            public Look look;
             internal readonly Dictionary<int, int> remap = new Dictionary<int, int>();   // shared SurfaceNets vertices
         }
+
+        public enum Look { Mucosa, Turbinate, Skin, Cartilage, Plain }
+
+        /// <summary>Patient side of the cavity: -1 = left (the field is written for the right side).</summary>
+        public const float Mirror = -1f;
+        public static Vector3 ToWork(Vector3 v) => new Vector3(Mirror * v.x, v.y, v.z);
+        public static Vector3 FromWork(Vector3 v) => new Vector3(Mirror * v.x, v.y, v.z);
 
         public const int AllPhases = 0x1F;
         public static int Mask(params SurgicalPhase[] phases) { int m = 0; foreach (var p in phases) m |= 1 << (int)p; return m; }
 
-        /// <summary>Autopilot path (m): from the right nostril up and back through the common meatus (>= 2 mm clearance).</summary>
-        public static readonly Vector3 PathStart = new Vector3(-7.5f, -25f, -86f) * 0.001f, PathEnd = new Vector3(-8.5f, -2f, -30f) * 0.001f;
+        /// <summary>Autopilot path (m, patient frame): from the left nostril up and back through the common meatus (>= 2 mm clearance).</summary>
+        public static readonly Vector3 PathStart = FromWork(new Vector3(-7.5f, -25f, -86f)) * 0.001f, PathEnd = FromWork(new Vector3(-8.5f, -2f, -30f)) * 0.001f;
 
         // Flap area (S, P mm) on the right septal face, the incision strip in front of it, and the resection window.
         public const float FlapP0 = -71f, FlapP1 = -28f, FlapS0 = -21f, FlapS1 = 17f, IncisionP0 = -72.2f;
@@ -83,13 +99,37 @@ namespace SeptoMentor
             - 3.2f * Mathf.Exp(-(s + 22) * (s + 22) / 5f) * Window(p, -58, -14, 3);          // basal spur (vomer / crest junction)
 
         /// <summary>Right mucosal face of the septum (L, mm).</summary>
-        public static float SeptumFace(float s, float p) => Deviation(s, p) - 1.8f;
+        public static float SeptumFace(float s, float p) => Deviation(s, p) - 1.8f - SwellBody(s, p);
+
+        /// <summary>Septal swell body (erectile mucosa opposite the middle turbinate), mm toward the cavity.</summary>
+        static float SwellBody(float s, float p) => 1.5f * Mathf.Exp(-((s - 7) * (s - 7) / 28f + (p + 47) * (p + 47) / 70f));
+
+        // Value noise (deterministic, thread-safe) for surface relief and colour variation.
+        static float Hash(int i, int j, int k)
+        {
+            unchecked
+            {
+                int h = (i * 73856093) ^ (j * 19349663) ^ (k * 83492791);
+                h = (h ^ (h >> 13)) * 1274126177;
+                return ((h ^ (h >> 16)) & 0xffff) / 65535f;
+            }
+        }
+
+        public static float Noise(float x, float y, float z)
+        {
+            int i = Mathf.FloorToInt(x), j = Mathf.FloorToInt(y), k = Mathf.FloorToInt(z);
+            float fx = x - i, fy = y - j, fz = z - k;
+            fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
+            float a = Mathf.Lerp(Mathf.Lerp(Hash(i, j, k), Hash(i + 1, j, k), fx), Mathf.Lerp(Hash(i, j + 1, k), Hash(i + 1, j + 1, k), fx), fy);
+            float b = Mathf.Lerp(Mathf.Lerp(Hash(i, j, k + 1), Hash(i + 1, j, k + 1), fx), Mathf.Lerp(Hash(i, j + 1, k + 1), Hash(i + 1, j + 1, k + 1), fx), fy);
+            return Mathf.Lerp(a, b, fz);
+        }
 
         static float PosteriorEdge(float s) => 8f - (s + 27f) * 0.25f;   // free edge of the vomer
 
         static float Roof(float p) => p < -45 ? Mathf.Min(22f, (p + 80f) * 22f / 35f) : p > -5 ? 22f - (p + 5f) * 0.9f : 22f;
 
-        public enum Wall { Septum, Lateral, Floor, Roof, Vestibule, Pharynx, InfTurb, MidTurb, Torus, Count }
+        public enum Wall { Septum, Lateral, Floor, Roof, Vestibule, Pharynx, InfTurb, MidTurb, Torus, SupTurb, Uncinate, Adenoid, Count }
 
         static void Components(float l, float s, float p, float[] c)
         {
@@ -101,9 +141,16 @@ namespace SeptoMentor
             c[(int)Wall.Vestibule] = Capsule(new Vector3(l, s, p), new Vector3(-7.4f, -28.6f, -104f), new Vector3(-8f, -19f, -68f), 3.9f, 5.5f);   // runs out of the grid: open nostril
             float np = SMax(SMax(Mathf.Abs(l) - 15f, p - 30f, 4), SMax(-25f - s, s - (14f - (p - 5f) * 0.6f), 4), 4);
             c[(int)Wall.Pharynx] = SMax(np, PosteriorEdge(s) - p - 2f, 2);
-            c[(int)Wall.InfTurb] = SMin(Ell(l, s, p, -15.5f, -17.5f, -20f, 7, 7.5f, 33), Ell(l, s, p, -14.8f, -16f, -44f, 7, 7.8f, 12), 3);
-            c[(int)Wall.MidTurb] = SMin(Ell(l, s, p, -10.8f, 4f, -15f, 3.3f, 6, 22), Ell(l, s, p, -13f, 11f, -15f, 2, 6, 20), 2);
+            float rough = Noise(l / 2.2f, s / 2.2f, p / 3.5f) - 0.5f;   // corrugated turbinate mucosa
+            c[(int)Wall.InfTurb] = SMin(Ell(l, s, p, -15.5f, -17.5f, -20f, 7, 7.5f, 33), Ell(l, s, p, -14.8f, -16f, -44f, 7, 7.8f, 12), 3) - 0.7f * rough;
+            float mt = SMin(Ell(l, s, p, -10.8f, 4f, -15f, 3.3f, 6, 22), Ell(l, s, p, -13f, 11f, -15f, 2, 6, 20), 2);
+            mt = SMin(mt, Capsule(new Vector3(l, s, p), new Vector3(-11.5f, 9f, -35f), new Vector3(-14.5f, 12.5f, -39f), 1.6f, 1.6f), 2);   // axilla
+            c[(int)Wall.MidTurb] = mt - 0.4f * rough;
             c[(int)Wall.Torus] = Ell(Mathf.Abs(l), s, p, 14, -8, 20, 4, 6, 6);
+            c[(int)Wall.SupTurb] = Ell(l, s, p, -11.5f, 15.5f, -2f, 2.2f, 3.2f, 10f) - 0.3f * rough;
+            c[(int)Wall.Uncinate] = SMin(Capsule(new Vector3(l, s, p), new Vector3(-14.6f, 10f, -47f), new Vector3(-14.2f, 0f, -38f), 1.3f, 1.1f),
+                                         Ell(l, s, p, -15f, 13.5f, -50f, 2.2f, 3.5f, 4.5f), 2);   // uncinate process + agger nasi
+            c[(int)Wall.Adenoid] = Ell(l, s, p, 0, 10, 24, 13, 6, 7) - 1.4f * (Noise(l / 2f, s / 2f, p / 2f) - 0.5f);
         }
 
         /// <summary>Signed distance to the airway wall, mm: negative in air, positive in tissue.</summary>
@@ -113,9 +160,15 @@ namespace SeptoMentor
             float cav = SMax(SMax(c[(int)Wall.Septum], c[(int)Wall.Lateral], 2), SMax(c[(int)Wall.Floor], c[(int)Wall.Roof], 2), 2);
             cav = SMax(cav, SMax(-74f - p, p - PosteriorEdge(s), 2), 2);
             float a = SMin(SMin(cav, c[(int)Wall.Vestibule], 3), c[(int)Wall.Pharynx], 3);
+            a = SMin(a, Ell(l, s, p, -15.6f, -24.5f, -50f, 1.0f, 1.4f, 2.4f), 0.6f);                 // Hasner's valve
+            a = SMin(a, Ell(Mathf.Abs(l), s, p, 12.2f, -9.5f, 15f, 1.5f, 2.6f, 1.8f), 0.8f);         // Eustachian orifices
             a = SMax(a, -c[(int)Wall.InfTurb], 1.5f);
             a = SMax(a, -c[(int)Wall.MidTurb], 1.5f);
-            return SMax(a, -c[(int)Wall.Torus], 2);
+            a = SMax(a, -c[(int)Wall.SupTurb], 1.2f);
+            a = SMax(a, -c[(int)Wall.Uncinate], 1f);
+            a = SMax(a, -c[(int)Wall.Torus], 2);
+            a = SMax(a, -c[(int)Wall.Adenoid], 2);
+            return a - 0.2f * (Noise(l / 1.4f, s / 1.4f, p / 1.4f) - 0.5f);   // mucosal micro-relief
         }
 
         static readonly float[] Scratch = new float[(int)Wall.Count];
@@ -174,6 +227,9 @@ namespace SeptoMentor
                         break;
                     case Wall.InfTurb: pc = Get("InferiorTurbinate", Structure.InferiorTurbinate, Turbinate); break;
                     case Wall.MidTurb: pc = Get("MiddleTurbinate", Structure.MiddleTurbinate, Turbinate * 1.05f); break;
+                    case Wall.SupTurb: pc = Get("SuperiorTurbinate", Structure.MiddleTurbinate, Turbinate * 1.05f); break;
+                    case Wall.Uncinate: pc = Get("Uncinate_AggerNasi", Structure.SinonasalBone, Mucosa * 0.97f); break;
+                    case Wall.Adenoid: pc = Get("Adenoid", Structure.SinonasalBone, new Color(0.84f, 0.52f, 0.53f)); break;
                     case Wall.Floor: pc = Get("NasalFloor", Structure.NasalFloor, Floor); break;
                     case Wall.Vestibule: pc = Get("Vestibule", Structure.Background, Skin); break;
                     case Wall.Pharynx: case Wall.Torus: pc = Get("Nasopharynx", Structure.SinonasalBone, Pharynx); break;
@@ -210,9 +266,65 @@ namespace SeptoMentor
             progress?.Invoke("vibrissae");
             Vibrissae(Get("Vibrissae", Structure.Background, Hair));
 
+            progress?.Invoke("surface colour, mirroring to the left side");
             var list = new List<Piece>();
-            foreach (var p in pieces.Values) if (p.tris.Count > 0) list.Add(p);
+            foreach (var p in pieces.Values) if (p.tris.Count > 0) { Finish(p); list.Add(p); }
             return list;
+        }
+
+        /// <summary>Per-vertex look (computed in the work frame), then mirrored to the patient's left side.</summary>
+        static void Finish(Piece pc)
+        {
+            pc.look = pc.name.StartsWith("Vibrissae") ? Look.Plain
+                    : pc.name.StartsWith("Vestibule") ? Look.Skin
+                    : pc.name.Contains("Turbinate") ? Look.Turbinate
+                    : pc.name.StartsWith("Cartilage") || pc.name == "Incision_Bed" ? Look.Cartilage
+                    : Look.Mucosa;
+            for (int i = 0; i < pc.verts.Count; i++)
+            {
+                Shade(pc.look, pc.verts[i] * 1000f, out var c, out var uv);
+                pc.colors.Add(c);
+                pc.uvs.Add(uv);
+                pc.verts[i] = FromWork(pc.verts[i]);
+            }
+            if (Mirror < 0)
+                for (int t = 0; t < pc.tris.Count; t += 3) { int b = pc.tris[t + 1]; pc.tris[t + 1] = pc.tris[t + 2]; pc.tris[t + 2] = b; }
+        }
+
+        /// <summary>
+        /// Colour multiplier (applied to the part's tint) and (vessel density, wetness): Little's area redder and
+        /// more vascular, upper walls paler, congested mottled turbinates, patches of glistening mucus.
+        /// </summary>
+        static void Shade(Look look, Vector3 mm, out Color c, out Vector2 uv)
+        {
+            float l = mm.x, s = mm.y, p = mm.z;
+            c = Color.white;
+            float vessels = 1f, wet = 1f;
+            float mucus = Mathf.Clamp01((Noise(l / 3f, s / 3f, p / 5f) - 0.72f) * 6f);
+            switch (look)
+            {
+                case Look.Mucosa:
+                    float little = Mathf.Exp(-((s + 16) * (s + 16) / 60f + (p + 66) * (p + 66) / 40f));   // Kiesselbach's plexus
+                    c = Color.Lerp(Color.white, new Color(0.9f, 0.62f, 0.66f), little);
+                    vessels = 1f + 1.6f * little;
+                    c *= Color.Lerp(Color.white, new Color(1f, 1.07f, 1.06f), Mathf.Clamp01((s - 5f) / 10f));   // thinner, paler mucosa up high
+                    c *= 0.96f + 0.08f * Noise(l / 4f, s / 4f, p / 4f);
+                    break;
+                case Look.Turbinate:
+                    float m = Noise(l / 1.2f, s / 1.2f, p / 1.2f);
+                    c = new Color(0.97f, 0.92f, 1.04f) * (0.92f + 0.16f * m);   // congested, slightly bluish
+                    vessels = 0.9f;
+                    break;
+                case Look.Cartilage:
+                    c *= 0.97f + 0.06f * Noise(l, s, p);
+                    vessels = 0.25f; wet = 1.2f; mucus = 0;
+                    break;
+                case Look.Skin: vessels = 0; wet = 0.5f; mucus = 0; break;
+                default: mucus = 0; break;
+            }
+            c = Color.Lerp(c, new Color(1.1f, 1.2f, 1.15f), 0.5f * mucus);
+            c.a = 1;
+            uv = new Vector2(vessels, wet + 1.5f * mucus);
         }
 
         static void AddTri(Piece pc, Vector3 a, Vector3 b, Vector3 c)

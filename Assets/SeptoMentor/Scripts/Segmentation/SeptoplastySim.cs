@@ -7,7 +7,7 @@ using Wall = SeptoMentor.NasalAnatomy.Wall;
 namespace SeptoMentor
 {
     /// <summary>
-    /// Tissue response of the procedural septum to the instrument in the resident's right hand
+    /// Tissue response of the procedural septum (left side: the field's work frame is mirrored, see NasalAnatomy) to the instrument in the resident's right hand
     /// (HandInstruments calls Step every frame with the tip pose in the patient's local space):
     ///   Incision  - scalpel drawn along the Killian line through the mucoperichondrium (strip cut segment by segment);
     ///   Elevation - Freer in the subperichondrial plane, spreading from the incision (flap lifted off the cartilage);
@@ -24,14 +24,30 @@ namespace SeptoMentor
         [Tooltip("Lateral lift of a fully elevated flap, mm.")]
         public float flapLiftMm = 4f;
 
-        /// <summary>(message, severity) for the monitor / speech / log.</summary>
-        public event Action<string, Severity> Hint;
+        /// <summary>(voice key, message, severity) for the monitor / voice / log.</summary>
+        public event Action<string, string, Severity> Hint;
 
         public bool Available { get; private set; }
         public int Tears { get; private set; }
         public int StrutViolations { get; private set; }
         /// <summary>Short progress text for the monitor, e.g. "Incision 5/8".</summary>
         public string Progress { get; private set; } = "";
+        /// <summary>Progress of the current step, 0..1 (for the spoken status).</summary>
+        public float ProgressFraction
+        {
+            get
+            {
+                if (!Available) return 0;
+                switch (Phase)
+                {
+                    case SurgicalPhase.Incision: return CutCount() / (float)Mathf.Max(1, _segOpenCount);
+                    case SurgicalPhase.FlapElevation: return ElevatedFraction() / 0.8f;
+                    case SurgicalPhase.Resection: return CountRemoved() / (float)(CS * CP);
+                    case SurgicalPhase.Closure: return _repositioned ? 1f : 1f - MeanElevation();
+                }
+                return 0;
+            }
+        }
 
         const int Seg = NasalAnatomy.IncisionSegments, CS = NasalAnatomy.ChunksS, CP = NasalAnatomy.ChunksP;
         const int ES = Seg, EP = 10;   // elevation grid over the flap (S x P); its S columns match the incision segments
@@ -216,7 +232,7 @@ namespace SeptoMentor
         public void Step(Structure tool, Vector3 tipLocal, bool trigger, bool triggerDown, XRNode hand)
         {
             if (!Ready()) return;
-            var mm = tipLocal * 1000f;
+            var mm = NasalAnatomy.ToWork(tipLocal * 1000f);   // the field's (right-side) frame; the cavity itself is on the left
             float dt = Mathf.Max(Time.deltaTime, 1e-4f);
             var delta = _hadTip ? mm - _lastMm : Vector3.zero;
             if (delta.magnitude > 10f) delta = Vector3.zero;   // teleport / regrab
@@ -315,7 +331,7 @@ namespace SeptoMentor
             }
             if (Elevation(s, p) < 0.3f && pen0 > 0.7f && p > P0 + 2.5f)
             {
-                Tear(mm, "The scalpel cut into the flap away from the incision line: mucosal tear.");
+                Tear("tear_scalpel_flap", mm, "The scalpel cut into the flap away from the incision line: mucosal tear.");
                 return 0.9f;
             }
             return Contact(pen0, 0.2f);
@@ -330,7 +346,7 @@ namespace SeptoMentor
             if (!reachable)
             {
                 // Pushing on intact mucosa from the cavity side.
-                if (pen0 > 1.6f) { Tear(new Vector3(NasalAnatomy.SeptumFace(s, p), s, p), "The elevator went through intact mucosa: flap tear. Enter through the incision and stay under the perichondrium."); return 1f; }
+                if (pen0 > 1.6f) { Tear("tear_elev", new Vector3(NasalAnatomy.SeptumFace(s, p), s, p), "The elevator went through intact mucosa: flap tear. Enter through the incision and stay under the perichondrium."); return 1f; }
                 if (CutCount() == 0) Say("elev_noinc", "Make the incision first (scalpel), then elevate through it.", Severity.Tip, 8f);
                 return Contact(pen0, 0.15f);
             }
@@ -437,7 +453,7 @@ namespace SeptoMentor
             {
                 var b = _flapBase[v];
                 float s = b.y * 1000f, p = b.z * 1000f;
-                _flapVerts[v] = new Vector3(b.x - 0.001f * flapLiftMm * Elevation(s, p) * Taper(s, p), b.y, b.z);
+                _flapVerts[v] = new Vector3(b.x - NasalAnatomy.Mirror * 0.001f * flapLiftMm * Elevation(s, p) * Taper(s, p), b.y, b.z);
             }
             _flapMesh.vertices = _flapVerts;
             _flapMesh.RecalculateNormals();
@@ -453,7 +469,7 @@ namespace SeptoMentor
             if (pen0 < 0.2f) { Haptics.Pulse(hand, 0.2f, 0.02f); return; }
             if (e < 0.45f)
             {
-                Tear(new Vector3(NasalAnatomy.SeptumFace(s, p), s, p), "The forceps bit mucosa that was not elevated: flap tear. Elevate the flap over the area first.");
+                Tear("tear_bite_flap", new Vector3(NasalAnatomy.SeptumFace(s, p), s, p), "The forceps bit mucosa that was not elevated: flap tear. Elevate the flap over the area first.");
                 return;
             }
             const float tol = 1f;
@@ -485,7 +501,7 @@ namespace SeptoMentor
             {
                 StrutViolations++;
                 Haptics.Pattern(hand, 3, 1f, 0.08f, 0.07f);
-                Say("strut", $"L-strut! That is the {(dorsal ? "dorsal" : "caudal")} strut - keep at least 10 mm. Bite not taken.", Severity.Warning, 2f);
+                Say(dorsal ? "strut_dorsal" : "strut_caudal", $"L-strut! That is the {(dorsal ? "dorsal" : "caudal")} strut - keep at least 10 mm. Bite not taken.", Severity.Warning, 2f);
                 return;
             }
             Haptics.Pulse(hand, 0.3f, 0.03f);
@@ -498,11 +514,11 @@ namespace SeptoMentor
         {
             string name = WallName(wall, mm);
             bool soft = wall == Wall.InfTurb || wall == Wall.MidTurb || wall == Wall.Torus;
-            if (tool == Structure.Scalpel && depth > 0.6f && soft) { Tear(mm, $"The scalpel cut the {name}: bleeding. Keep the blade on the septum."); return; }
-            if (tool == Structure.ScissorsForceps && triggerDown) { Tear(mm, $"The forceps bit the {name}! Only bite cartilage under an elevated flap."); return; }
+            if (tool == Structure.Scalpel && depth > 0.6f && soft) { Tear("tear_scalpel_wall", mm, $"The scalpel cut the {name}: bleeding. Keep the blade on the septum."); return; }
+            if (tool == Structure.ScissorsForceps && triggerDown) { Tear("tear_bite_wall", mm, $"The forceps bit the {name}! Only bite cartilage under an elevated flap."); return; }
             if (wall == Wall.Septum && mm.z > P1 && tool == Structure.ScissorsForceps)
                 Say("bone", "Bony septum (perpendicular plate / vomer): cut sharply, never twist or rock - skull-base risk.", Severity.Caution, 10f);
-            if (depth > 2.2f) Say("force_" + wall, $"Too much pressure on the {name}.", Severity.Caution, 6f);
+            if (depth > 2.2f) Say("force", $"Too much pressure on the {name}.", Severity.Caution, 6f);
         }
 
         static string WallName(Wall w, Vector3 mm)
@@ -522,20 +538,21 @@ namespace SeptoMentor
 
         // ------------------------------------------------------------------ bleeding, tears
 
-        void Tear(Vector3 mm, string message)
+        void Tear(string key, Vector3 mm, string message)
         {
             if (_said.TryGetValue("tear", out float last) && Time.time - last < 3f) return;
             Tears++;
             Haptics.Pulse(XRNode.RightHand, 1f, 0.35f);
-            Say("tear", message, Severity.Warning, 3f);
+            _said["tear"] = Time.time;
+            Say(key, message, Severity.Warning, 0f);
             var n = Normal(mm);
             var surf = mm;
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = "MucosalTear";
             Destroy(go.GetComponent<Collider>());
             go.transform.SetParent(Patient.AnatomyRoot, false);
-            go.transform.localPosition = (surf + n * 0.15f) * 0.001f;
-            go.transform.localRotation = Quaternion.LookRotation(n) * Quaternion.Euler(0, 0, UnityEngine.Random.Range(0f, 180f));
+            go.transform.localPosition = NasalAnatomy.FromWork(surf + n * 0.15f) * 0.001f;
+            go.transform.localRotation = Quaternion.LookRotation(NasalAnatomy.FromWork(n)) * Quaternion.Euler(0, 0, UnityEngine.Random.Range(0f, 180f));
             go.transform.localScale = new Vector3(0.004f, 0.0008f, 0.0003f);
             provider.AddLabelPart(Patient.AddPart(go, Structure.MucosalTear, true));
             _tears.Add(go);
@@ -575,7 +592,7 @@ namespace SeptoMentor
         {
             float g = Mathf.Clamp01(age / 20f);
             float w = (0.8f + 1.4f * g) * b.size, len = (1f + 5f * g) * b.size;
-            b.t.localPosition = (b.at + new Vector3(-0.05f, -len * 0.4f, 0)) * 0.001f;
+            b.t.localPosition = NasalAnatomy.FromWork(b.at + new Vector3(-0.05f, -len * 0.4f, 0)) * 0.001f;
             b.t.localRotation = Quaternion.identity;
             b.t.localScale = new Vector3(0.35f, len, w) * 0.001f;
         }
@@ -609,7 +626,7 @@ namespace SeptoMentor
         {
             if (_said.TryGetValue(key, out float last) && Time.time - last < cooldown) return;
             _said[key] = Time.time;
-            Hint?.Invoke(message, sev);
+            Hint?.Invoke(key, message, sev);
         }
     }
 }
