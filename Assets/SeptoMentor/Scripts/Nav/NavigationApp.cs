@@ -204,11 +204,11 @@ namespace SeptoMentor.Nav
                     var v = r.data.volume;
                     _progressText = "Building skin surface...";
                     r.skin = SurfaceNets.Extract((i, j, k) => v.At(i, j, k), -300, Vector3Int.zero,
-                                                 new Vector3Int(v.nx - 1, v.ny - 1, v.nz - 1), 2, v.IndexToModel);
+                                                 new Vector3Int(v.nx - 1, v.ny - 1, v.nz - 1), 2, v.IndexToModel).Smooth();
                     r.skinGrid = new Registration.PointGrid(r.skin.vertices, 0.004f);
                     CropAroundNose(r.data, out var min, out var max);
                     _progressText = "Building bone surface...";
-                    r.bone = SurfaceNets.Extract((i, j, k) => v.At(i, j, k), 300, min, max, 1, v.IndexToModel);
+                    r.bone = SurfaceNets.Extract((i, j, k) => v.At(i, j, k), 300, min, max, 1, v.IndexToModel).Smooth(2);
                     if (r.data.labels != null)
                     {
                         foreach (var kv in r.data.labelNames)
@@ -216,7 +216,7 @@ namespace SeptoMentor.Nav
                             byte id = kv.Key; var lab = r.data.labels;
                             _progressText = "Building " + kv.Value + "...";
                             r.labels.Add(new KeyValuePair<byte, SurfaceNets>(id,
-                                SurfaceNets.Extract((i, j, k) => lab[v.Index(i, j, k)] == id ? 1f : 0f, 0.5f, min, max, 1, v.IndexToModel)));
+                                SurfaceNets.Extract((i, j, k) => lab[v.Index(i, j, k)] == id ? 1f : 0f, 0.5f, min, max, 1, v.IndexToModel).Smooth(3)));
                         }
                     }
                     r.objs = CaseLoader.ReadObjs(name, root);
@@ -272,7 +272,7 @@ namespace SeptoMentor.Nav
             }
             dashboard.SetVolume(v, _ctTex, _labelTex);
 
-            _skin = MeshObject("Skin", r.skin.ToMesh("Skin"), new Color(1f, 0.85f, 0.75f, 0.18f));
+            _skin = MeshObject("Skin", r.skin.ToMesh("Skin"), new Color(1f, 0.85f, 0.75f, 0.25f));
             _skinCollider = _skin.gameObject.AddComponent<MeshCollider>();
             _skinCollider.sharedMesh = _skin.GetComponent<MeshFilter>().sharedMesh;
             _bone = MeshObject("Bone", r.bone.ToMesh("Bone"), new Color(1f, 0.95f, 0.8f, 0.22f));
@@ -949,7 +949,8 @@ namespace SeptoMentor.Nav
                 : $"registered: landmarks {_fre:0.0} mm" + (float.IsNaN(_surfaceRms) ? "" : $", surface {_surfaceRms:0.0} mm") + (_nudged ? ", nudged" : "");
             string cal = _handPointer ? "pointer: index finger (~5-10 mm)" : _tipCalibrated ? "tip calibrated" : "tip NOT calibrated";
             var c = _trackingSuspect ? new Color(1f, 0.35f, 0.3f) : _registered ? new Color(0.6f, 1f, 0.6f) : new Color(1f, 0.85f, 0.4f);
-            string hands = _in.HandsActive ? "\nHands: left pinch = trigger, turn left palm to you = button menu (poke with right index)" : "";
+            string hands = "\n" + HandTracking.StatusText +
+                           (_in.HandsActive ? "  |  left pinch = trigger, turn left palm to you = button menu (poke with right index)" : "");
             dashboard.SetStatus($"{(_case != null ? _case.name : "no case")}  |  {reg}{(_trackingSuspect ? "  |  TRACKING RESET - RE-VERIFY" : "")}  |  {cal}{hands}", c);
 
             if (_registered && _tipValid && _case != null)

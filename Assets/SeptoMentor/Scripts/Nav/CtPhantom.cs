@@ -38,7 +38,9 @@ namespace SeptoMentor.Nav
             {
                 var p = new Vector3(Min.x + i * Step, Min.y + k * Step, Min.z + j * Step);   // (L, S, P)
                 int n = vol.Index(i, j, k);
-                vol.hu[n] = (short)Hu(p, out labels[n]);
+                // Partial-volume blend over ~1 voxel at the skin so the extracted surface is smooth, not stepped.
+                float skin = SkinSdf(p);
+                vol.hu[n] = (short)(skin > 1f ? -1000 : Mathf.Lerp(Hu(p, skin, out labels[n]), -1000, Mathf.Clamp01((skin + 1f) * 0.5f)));
             }
 
             var data = new CaseData { name = "Phantom (synthetic)", volume = vol, labels = labels, isPhantom = true };
@@ -79,29 +81,68 @@ namespace SeptoMentor.Nav
             return LspToModel(best);
         }
 
-        static float Ell(Vector3 p, Vector3 c, Vector3 r)
+        static float In(Vector3 p, Vector3 c, Vector3 r)
         {
             var d = new Vector3((p.x - c.x) / r.x, (p.y - c.y) / r.y, (p.z - c.z) / r.z);
             return d.sqrMagnitude;   // < 1 inside
         }
 
-        /// <summary>Approximate signed distance to the skin (negative inside), in mm.</summary>
+        /// <summary>Approximate signed distance to the skin (negative inside), in mm: a mannequin-like head
+        /// (cranium, face, jaw, chin, cheekbones, brow, eye sockets, ears, neck, nose, lips) built from
+        /// smoothly blended primitives.</summary>
         static float SkinSdf(Vector3 p)
         {
-            float head = (Mathf.Sqrt(Ell(p, new Vector3(0, 15, 30), new Vector3(75, 105, 100))) - 1f) * 75f;
-            // Nose: a pyramid bounded by the dorsum (nasion -> tip), the columella (tip -> subnasale),
-            // two sloping sides, and capped inside the face; plus the alae.
-            float s = p.y, pp = p.z;
-            float dorsum = (s - NoseTipS) * 0.581f - (pp - NoseTipP) * 0.814f;      // > 0 in front of the dorsum
-            float under = -(s - NoseTipS) * 0.906f - (pp - NoseTipP) * 0.425f;      // > 0 below the columella
-            float side = (Mathf.Abs(p.x) - 4f + 0.45f * dorsum) * 0.911f;           // widens away from the dorsum
-            float nose = Mathf.Max(Mathf.Max(dorsum, under), Mathf.Max(side, pp + 50f));
-            float alaR = (Mathf.Sqrt(Ell(p, new Vector3(-11, -20, -80), new Vector3(7, 6, 9))) - 1f) * 6f;
-            float alaL = (Mathf.Sqrt(Ell(p, new Vector3(11, -20, -80), new Vector3(7, 6, 9))) - 1f) * 6f;
-            return Mathf.Min(head, Mathf.Min(nose, Mathf.Min(alaR, alaL)));
+            var m = new Vector3(Mathf.Abs(p.x), p.y, p.z);   // mirrored for paired features
+            float d = Ell(p, new Vector3(0, 32, 12), new Vector3(71, 86, 97));                    // cranium
+            d = SMin(d, Ell(p, new Vector3(0, -8, -22), new Vector3(60, 74, 60)), 12);            // midface
+            d = SMin(d, Ell(p, new Vector3(0, -52, -38), new Vector3(46, 38, 44)), 14);           // jaw
+            d = SMin(d, Ell(p, new Vector3(0, -70, -66), new Vector3(17, 13, 13)), 8);            // chin
+            d = SMin(d, Ell(m, new Vector3(42, 6, -56), new Vector3(16, 12, 15)), 16);            // cheekbones
+            d = SMin(d, Ell(m, new Vector3(26, 42, -70), new Vector3(22, 7, 12)), 8);             // brow ridge
+            d = SSub(d, Ell(m, new Vector3(31, 30, -86), new Vector3(15, 10, 14)), 6);            // eye sockets
+            d = SMin(d, Ell(m, new Vector3(31, 29, -62), new Vector3(13, 9.5f, 11)), 3);          // closed eyelids
+            float neck = (Mathf.Sqrt(Sq(p.x / 48) + Sq((p.z - 22) / 50)) - 1) * 48;
+            d = SMin(d, Mathf.Max(neck, p.y + 40), 15);
+            d = SMin(d, Ell(m, new Vector3(71, 22, 14), new Vector3(6, 28, 16)), 4);              // ears
+
+            float nose = Capsule(p, new Vector3(0, 26, -79), new Vector3(0, -10, -92), 5.5f, 8f); // dorsum
+            nose = SMin(nose, Ell(p, new Vector3(0, -13, -89), new Vector3(8.5f, 8, 8)), 4);       // tip
+            nose = SMin(nose, Ell(m, new Vector3(11, -21, -80), new Vector3(7, 6, 8)), 4);         // alae
+            nose = SMin(nose, Capsule(p, new Vector3(0, -19, -91), new Vector3(0, -30, -82), 3.5f, 3.5f), 3);   // columella
+            d = SMin(d, nose, 5);
+
+            d = SMin(d, Ell(p, new Vector3(0, -40, -79), new Vector3(18, 6, 8.5f)), 5);            // upper lip
+            d = SMin(d, Ell(p, new Vector3(0, -51, -77), new Vector3(16, 6, 8.5f)), 5);            // lower lip
+            d = SSub(d, Ell(p, new Vector3(0, -45.5f, -90), new Vector3(19, 0.9f, 13)), 2);        // mouth
+            d = SSub(d, Capsule(p, new Vector3(0, -31, -86), new Vector3(0, -38, -88), 2, 2), 2);  // philtrum
+            return d;
         }
 
-        const float NoseTipS = -12f, NoseTipP = -98f;
+        static float Sq(float x) => x * x;
+
+        /// <summary>Ellipsoid signed distance (bound-corrected approximation), mm.</summary>
+        static float Ell(Vector3 p, Vector3 c, Vector3 r)
+        {
+            var q = p - c;
+            float k0 = new Vector3(q.x / r.x, q.y / r.y, q.z / r.z).magnitude;
+            float k1 = new Vector3(q.x / (r.x * r.x), q.y / (r.y * r.y), q.z / (r.z * r.z)).magnitude + 1e-9f;
+            return k0 * (k0 - 1) / k1;
+        }
+
+        /// <summary>Capsule from a (radius ra) to b (radius rb).</summary>
+        static float Capsule(Vector3 p, Vector3 a, Vector3 b, float ra, float rb)
+        {
+            var ab = b - a; float t = Mathf.Clamp01(Vector3.Dot(p - a, ab) / ab.sqrMagnitude);
+            return Vector3.Distance(p, a + ab * t) - Mathf.Lerp(ra, rb, t);
+        }
+
+        static float SMin(float a, float b, float k)
+        {
+            float h = Mathf.Clamp01(0.5f + 0.5f * (b - a) / k);
+            return Mathf.Lerp(b, a, h) - k * h * (1 - h);
+        }
+
+        static float SSub(float a, float b, float k) => -SMin(-a, b, k);   // a minus b
 
         static float SeptumDeviation(float s, float pp) =>
             -5f * Mathf.Exp(-((s + 8) * (s + 8) / 128f + (pp + 45) * (pp + 45) / 288f))      // C-shaped deviation to the right
@@ -109,11 +150,9 @@ namespace SeptoMentor.Nav
 
         static float CavityTop(float pp) => pp >= -45 ? 22f : Asa.y + (pp - Asa.z) * (Dorsal.y - Asa.y) / (Dorsal.z - Asa.z);
 
-        static int Hu(Vector3 p, out byte label)
+        static int Hu(Vector3 p, float skin, out byte label)
         {
             label = 0;
-            float skin = SkinSdf(p);
-            if (skin > 0) return -1000;
             float l = p.x, s = p.y, pp = p.z;
             float al = Mathf.Abs(l);
 
@@ -121,7 +160,7 @@ namespace SeptoMentor.Nav
             bool inNasalBox = al < 15 && s > -27 && s < CavityTop(pp) && pp > -84 && pp < 8 && skin < -2.5f;
             bool nostril = DistSeg(new Vector3(al, s, pp), new Vector3(7, -26, -86), new Vector3(7, -16, -74)) < 4f;
             bool pharynx = al < 14 && s > -27 && s < 10 && pp >= 8 && pp < 32;
-            bool maxSinus = Ell(new Vector3(al, s, pp), new Vector3(32, -10, -35), new Vector3(12, 14, 16)) < 1;
+            bool maxSinus = In(new Vector3(al, s, pp), new Vector3(32, -10, -35), new Vector3(12, 14, 16)) < 1;
 
             // Septum (inside the nasal box only).
             if (inNasalBox && pp > Ans.z - 2)
@@ -137,12 +176,12 @@ namespace SeptoMentor.Nav
             }
 
             // Turbinates (soft tissue with bony core) project into the cavity.
-            float inf = Ell(new Vector3(al, s, pp), new Vector3(13, -18, -25), new Vector3(4.5f, 7, 32));
-            float mid = Ell(new Vector3(al, s, pp), new Vector3(11, 3, -15), new Vector3(3.5f, 5, 22));
+            float inf = In(new Vector3(al, s, pp), new Vector3(13, -18, -25), new Vector3(4.5f, 7, 32));
+            float mid = In(new Vector3(al, s, pp), new Vector3(11, 3, -15), new Vector3(3.5f, 5, 22));
             if (inf < 1 || mid < 1)
             {
                 label = LabelTurbinate;
-                bool core = Ell(new Vector3(al, s, pp), inf < 1 ? new Vector3(14, -18, -25) : new Vector3(12, 3, -15),
+                bool core = In(new Vector3(al, s, pp), inf < 1 ? new Vector3(14, -18, -25) : new Vector3(12, 3, -15),
                                 inf < 1 ? new Vector3(1.5f, 4, 28) : new Vector3(1.2f, 3, 18)) < 1;
                 return core ? 700 : 45;
             }
@@ -154,14 +193,14 @@ namespace SeptoMentor.Nav
             bool lateralWall = al >= 15 && al < 17 && s > -29 && s < 23 && pp > -62 && pp < 8;
             bool palate = s > -32 && s <= -27 && al < 18 && pp > -64 && pp < 8;
             bool skullBase = s >= 22 && s < 25 && al < 13 && pp > -56 && pp < 8;
-            bool sinusWall = Ell(new Vector3(al, s, pp), new Vector3(32, -10, -35), new Vector3(14, 16, 18)) < 1;
+            bool sinusWall = In(new Vector3(al, s, pp), new Vector3(32, -10, -35), new Vector3(14, 16, 18)) < 1;
             bool cranium = skin < -5 && skin > -11 && s > 24;
             bool nasalBones = skin < -2.5f && skin > -5.5f && pp < -62 && s > 12 && al < 10;
             if (lateralWall || palate || skullBase || sinusWall || cranium || nasalBones) return 1200;
 
             // Orbits: globe + fat.
-            float orb = Ell(new Vector3(al, s, pp), new Vector3(32, 30, -48), new Vector3(15, 15, 17));
-            if (orb < 1) return Ell(new Vector3(al, s, pp), new Vector3(32, 30, -52), new Vector3(12, 12, 12)) < 1 ? 15 : -90;
+            float orb = In(new Vector3(al, s, pp), new Vector3(32, 30, -48), new Vector3(15, 15, 17));
+            if (orb < 1) return In(new Vector3(al, s, pp), new Vector3(32, 30, -52), new Vector3(12, 12, 12)) < 1 ? 15 : -90;
 
             return s > 25 && skin < -11 ? 35 : 45;   // brain / soft tissue
         }

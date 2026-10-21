@@ -39,8 +39,12 @@ Shader "SeptoMentor/NavGhost"
 
             fixed4 frag (v2f i) : SV_Target
             {
-                float f = 1.0 - saturate(abs(dot(normalize(i.wn), normalize(i.wv))));
-                return fixed4(_Color.rgb, saturate(_Color.a * (0.3 + pow(f, _Rim))));
+                float3 n = normalize(i.wn), v = normalize(i.wv);
+                float f = 1.0 - saturate(abs(dot(n, v)));
+                // Soft light from slightly above the viewer so the surface shape (nose, lips, orbits) reads.
+                float dif = abs(dot(n, normalize(v + float3(0, 0.7, 0))));
+                float3 col = _Color.rgb * (0.45 + 0.55 * dif) + pow(f, _Rim) * 0.2;
+                return fixed4(col, saturate(_Color.a * (0.5 + pow(f, _Rim))));
             }
             ENDCG
         }

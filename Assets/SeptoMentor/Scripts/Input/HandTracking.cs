@@ -63,6 +63,31 @@ namespace SeptoMentor
             return true;
         }
 
+        /// <summary>
+        /// Palm centre and the direction the palm faces, in world space. The normal is computed from the
+        /// knuckle positions (not from joint axes), so it does not depend on the runtime's axis convention.
+        /// </summary>
+        public static bool TryGetPalmWorld(bool right, out Vector3 centre, out Vector3 normal)
+        {
+            centre = normal = Vector3.zero;
+            if (!TryGetJointWorld(right, XRHandJointID.Wrist, out var w) ||
+                !TryGetJointWorld(right, XRHandJointID.IndexProximal, out var i) ||
+                !TryGetJointWorld(right, XRHandJointID.LittleProximal, out var l)) return false;
+            // Left hand, palm toward the viewer, fingers up: index is on the viewer's right, so
+            // (little - index) x (index - wrist) points at the viewer. Mirrored for the right hand.
+            var n = Vector3.Cross(l.position - i.position, i.position - w.position);
+            if (right) n = -n;
+            if (n.sqrMagnitude < 1e-8f) return false;
+            normal = n.normalized;
+            centre = (w.position + i.position + l.position) / 3f;
+            return true;
+        }
+
+        /// <summary>One-line state for status displays.</summary>
+        public static string StatusText =>
+            Subsystem == null ? "hand tracking OFF (Quest Settings > Movement tracking > Hand tracking)"
+            : $"hands: L {(IsTracked(false) ? "ok" : "-")}  R {(IsTracked(true) ? "ok" : "-")}";
+
         /// <summary>Thumb-to-index tip distance in metres (infinity when the hand is not tracked).</summary>
         public static float PinchDistance(bool right)
         {

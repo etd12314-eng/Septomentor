@@ -108,6 +108,37 @@ namespace SeptoMentor.Nav
             triangles.Add(a); triangles.Add(b); triangles.Add(c);
         }
 
+        /// <summary>Taubin smoothing (shrink-free): removes voxel stair-steps while keeping the shape's size.</summary>
+        public SurfaceNets Smooth(int iterations = 4, float lambda = 0.5f, float mu = -0.53f)
+        {
+            int n = vertices.Count;
+            if (n == 0) return this;
+            var nb = new List<int>[n];
+            for (int i = 0; i < n; i++) nb[i] = new List<int>(6);
+            for (int t = 0; t < triangles.Count; t += 3)
+                for (int e = 0; e < 3; e++)
+                {
+                    int a = triangles[t + e], b = triangles[t + (e + 1) % 3];
+                    if (!nb[a].Contains(b)) nb[a].Add(b);
+                    if (!nb[b].Contains(a)) nb[b].Add(a);
+                }
+            var tmp = new Vector3[n];
+            for (int it = 0; it < iterations * 2; it++)
+            {
+                float f = (it & 1) == 0 ? lambda : mu;
+                for (int i = 0; i < n; i++)
+                {
+                    if (nb[i].Count == 0) { tmp[i] = vertices[i]; continue; }
+                    var avg = Vector3.zero;
+                    foreach (int j in nb[i]) avg += vertices[j];
+                    avg /= nb[i].Count;
+                    tmp[i] = vertices[i] + (avg - vertices[i]) * f;
+                }
+                for (int i = 0; i < n; i++) vertices[i] = tmp[i];
+            }
+            return this;
+        }
+
         public Mesh ToMesh(string name)
         {
             var m = new Mesh { name = name, indexFormat = vertices.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
