@@ -36,8 +36,8 @@ namespace SeptoMentor
                 _legacy = go.AddComponent<TextMesh>();
                 _legacy.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
                 go.GetComponent<MeshRenderer>().sharedMaterial = _legacy.font.material;
-                _legacy.fontSize = 64;
-                _legacy.characterSize = fontSize * 0.016f;
+                _legacy.fontSize = 128;                      // larger glyph atlas = sharper text in the headset
+                _legacy.characterSize = fontSize * 0.008f;
                 _legacy.anchor = align == TextAlignmentOptions.Left || align == TextAlignmentOptions.TopLeft ? TextAnchor.UpperLeft : TextAnchor.MiddleCenter;
                 _legacy.alignment = _legacy.anchor == TextAnchor.UpperLeft ? TextAlignment.Left : TextAlignment.Center;
             }

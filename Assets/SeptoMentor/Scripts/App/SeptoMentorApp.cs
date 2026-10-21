@@ -14,6 +14,9 @@ namespace SeptoMentor
         public SpeechIO speech;
         public SessionLogger logger;
         public ControllerInput input;
+        [Tooltip("Optional: operating room. When set, recenter moves the user to the surgeon's spot instead of moving the monitor.")]
+        public OperatingRoom room;
+        public HandheldScope scope;
         public Transform head;
         [Tooltip("Parent of monitor + hologram; moved by Recenter.")]
         public Transform userRig;
@@ -31,6 +34,20 @@ namespace SeptoMentor
             input.Recenter += DoRecenter;
             input.AskAI += OnAsk;
             input.ToggleLabels += () => overlay.ToggleLabels();
+            input.ToggleScope += () =>
+            {
+                if (scope == null) return;
+                scope.handheld = !scope.handheld;
+                overlay.ShowMentor(scope.handheld ? "Hand-held scope: the right controller is the endoscope." : "Scope on autopilot / thumbsticks.", Severity.Info, 3f);
+                logger.Log("input", mentor.Phase.ToString(), null, null, "scope mode " + (scope.handheld ? "hand-held" : "auto"));
+            };
+            if (scope != null)
+                scope.Hint += (msg, sev) =>
+                {
+                    overlay.ShowMentor(msg, sev, 4f);
+                    logger.Log("scope", mentor.Phase.ToString(), null, sev.ToString(), msg);
+                    if (sev >= Severity.Caution) speech.Speak(msg);
+                };
             input.SimulateTear += () =>
             {
                 if (Synthetic != null && Synthetic.SimulateTear()) logger.Log("input", mentor.Phase.ToString(), null, null, "simulated mucosal tear");
@@ -77,7 +94,9 @@ namespace SeptoMentor
             "B  change instrument\n" +
             "X  recenter view\n" +
             (ai.Configured ? "Y  ask the AI mentor\n" : "Y  (AI mentor off in this build)\n") +
-            "Right stick  look around\n" +
+            (scope != null ? "Right controller  = endoscope: insert it into the nostril of the patient's head\n" +
+                             "Right stick click  hand-held scope / autopilot\n" : "") +
+            "Right stick  look around (autopilot)\n" +
             "Hold right grip + stick  twist instrument\n" +
             "Left stick  advance / withdraw scope\n" +
             "Right trigger  labels on/off\n" +
@@ -115,6 +134,7 @@ namespace SeptoMentor
         void DoRecenter()
         {
             SubsystemManager.GetSubsystems(Subsystems);
+            if (room != null) { room.PlaceUser(head); return; }
             foreach (var s in Subsystems) s.TryRecenter();
             if (head == null || userRig == null) return;
             var fwd = Vector3.ProjectOnPlane(head.forward, Vector3.up);

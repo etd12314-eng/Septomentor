@@ -24,6 +24,9 @@ namespace SeptoMentor
 
         void Start()
         {
+            // Sharper eye buffers + 4x MSAA everywhere (the operating room sets its own, higher scale).
+            if (FindAnyObjectByType<OperatingRoom>() == null) XRSettings.eyeTextureResolutionScale = 1.2f;
+            QualitySettings.antiAliasing = 4;
             if (!isLauncher) return;
             transform.localScale = Vector3.one * 0.01f;
             _title = new Label3D(transform, "Title", 22);

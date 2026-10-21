@@ -90,7 +90,7 @@ namespace SeptoMentor.Nav
         /// <summary>Approximate signed distance to the skin (negative inside), in mm: a mannequin-like head
         /// (cranium, face, jaw, chin, cheekbones, brow, eye sockets, ears, neck, nose, lips) built from
         /// smoothly blended primitives.</summary>
-        static float SkinSdf(Vector3 p)
+        public static float SkinSdf(Vector3 p)
         {
             var m = new Vector3(Mathf.Abs(p.x), p.y, p.z);   // mirrored for paired features
             float d = Ell(p, new Vector3(0, 32, 12), new Vector3(71, 86, 97));                    // cranium

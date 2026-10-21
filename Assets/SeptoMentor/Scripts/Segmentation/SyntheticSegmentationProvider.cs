@@ -16,15 +16,22 @@ namespace SeptoMentor
         public Shader labelShader;
 
         [Header("Endoscope")]
-        public int videoSize = 512;
+        public int videoSize = 1024;
         [Tooltip("Vertical FOV, deg. 0-degree rigid scopes are roughly 70-90 deg diagonal.")]
         public float fieldOfView = 75f;
+        [Tooltip("Label pass + readback rate; the video itself renders every frame up to videoFps.")]
         public float renderFps = 30f;
+        public float videoFps = 60f;
         public float nearClip = 0.0005f, farClip = 0.2f;
 
         [Header("Fly-through")]
         public float pathCycleSeconds = 40f;
         public float swayMeters = 0.0008f;
+
+        [Header("Hand-held (controller-driven) scope, in the patient's local space")]
+        public bool externalPose;
+        public Vector3 externalPosition;
+        public Quaternion externalRotation = Quaternion.identity;
 
         [Header("Manual (thumbstick)")]
         public Vector2 manualLook;      // x yaw, y pitch in [-1,1]
@@ -50,7 +57,7 @@ namespace SeptoMentor
         readonly SegmentationFrame[] _pool = new SegmentationFrame[3];
         int _poolIdx, _frameIdx;
         bool _readbackPending;
-        float _nextRender, _u, _manualUntil, _autoDir = 1f;
+        float _nextRender, _nextVideo, _u, _manualUntil, _autoDir = 1f;
 
         protected override void Awake()
         {
@@ -64,7 +71,9 @@ namespace SeptoMentor
             _parts.AddRange(patient.Parts);
             _labelMat = new Material(labelShader != null ? labelShader : Shader.Find("SeptoMentor/LabelId")) { name = "LabelId" };
 
-            _videoRT = new RenderTexture(videoSize, videoSize, 24, RenderTextureFormat.ARGB32) { name = "EndoVideo", antiAliasing = 2 };
+            // Mipmapped + anisotropic so the monitor stays crisp (not shimmering) when seen from a distance.
+            _videoRT = new RenderTexture(videoSize, videoSize, 24, RenderTextureFormat.ARGB32)
+            { name = "EndoVideo", antiAliasing = 4, useMipMap = true, autoGenerateMips = true, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
             var labelFmt = SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.R8) ? RenderTextureFormat.R8 : RenderTextureFormat.ARGB32;
             _labelRT = new RenderTexture(LabelSize, LabelSize, 24, labelFmt, RenderTextureReadWrite.Linear)
             { name = "EndoLabels", antiAliasing = 1, filterMode = FilterMode.Point };
@@ -102,10 +111,14 @@ namespace SeptoMentor
         {
             if (_endoCam == null) return;
             MoveScope();
+            if (Time.time >= _nextVideo)
+            {
+                _nextVideo = Time.time + 1f / Mathf.Max(1f, videoFps) - 0.002f;
+                _endoCam.Render();
+            }
             if (Time.time < _nextRender) return;
             _nextRender = Time.time + 1f / Mathf.Max(1f, renderFps);
 
-            _endoCam.Render();
             RenderLabels();
             if (!_readbackPending)
             {
@@ -119,6 +132,12 @@ namespace SeptoMentor
 
         void MoveScope()
         {
+            if (externalPose)
+            {
+                _rig.localPosition = externalPosition;
+                _rig.localRotation = externalRotation;
+                return;
+            }
             bool manual = manualLook.sqrMagnitude > 0.01f || Mathf.Abs(manualAdvance) > 0.1f;
             if (manual) _manualUntil = Time.time + 5f;
 

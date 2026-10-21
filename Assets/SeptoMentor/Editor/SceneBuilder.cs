@@ -35,8 +35,8 @@ namespace SeptoMentor.EditorTools
             camGo.transform.localPosition = new Vector3(0, 1.6f, 0);
             var cam = camGo.AddComponent<Camera>();
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.02f, 0.02f, 0.03f, 1f);   // OPEN ITEM 3: passthrough instead
-            cam.nearClipPlane = 0.05f;
+            cam.backgroundColor = new Color(0.02f, 0.02f, 0.03f, 1f);
+            cam.nearClipPlane = 0.02f;   // the resident leans in close to the patient's nose
             cam.farClipPlane = 50f;
             camGo.AddComponent<AudioListener>();
             camGo.AddComponent<HeadTracker>();
@@ -67,19 +67,22 @@ namespace SeptoMentor.EditorTools
             logger.provider = provider;
             var input = sys.AddComponent<ControllerInput>();
 
-            // --- User-facing rig: monitor + hologram -------------------------------------------
+            // --- Operating room; the monitor sits on the endoscopy tower ---------------------------
+            var room = new GameObject("OperatingRoom").AddComponent<OperatingRoom>();
+            room.surfaceShader = Shader.Find("SeptoMentor/ORSurface");
             var userRig = new GameObject("UserRig").transform;
-            userRig.position = new Vector3(0, 1.45f, 0.9f);
+            userRig.position = OperatingRoom.MonitorPosition;
             var monitor = new GameObject("Monitor").transform;
             monitor.SetParent(userRig, false);
             var overlay = monitor.gameObject.AddComponent<OverlayView>();
             overlay.provider = provider;
             overlay.monitorShader = Shader.Find("SeptoMentor/MonitorComposite");
+            overlay.monitorSize = 56f;
 
             var holo = new GameObject("AnatomyHologram").transform;
             holo.SetParent(userRig, false);
-            holo.localPosition = new Vector3(-0.48f, 0.0f, 0.05f);
-            holo.localRotation = Quaternion.Euler(0, 35f, 0);
+            holo.localPosition = new Vector3(-0.62f, -0.12f, 0.0f);
+            holo.localRotation = Quaternion.Euler(0, 30f, 0);
             var hologram = holo.gameObject.AddComponent<AnatomyHologram>();
             hologram.synthetic = provider;
             hologram.ghostShader = Shader.Find("SeptoMentor/Ghost");
@@ -87,7 +90,10 @@ namespace SeptoMentor.EditorTools
             var app = sys.AddComponent<SeptoMentorApp>();
             app.provider = provider; app.mentor = mentor; app.overlay = overlay; app.ai = ai;
             app.speech = speech; app.logger = logger; app.input = input;
-            app.head = camGo.transform; app.userRig = userRig;
+            app.head = camGo.transform; app.userRig = userRig; app.room = room;
+            var scope = sys.AddComponent<HandheldScope>();
+            scope.provider = provider; scope.room = room; scope.head = camGo.transform;
+            app.scope = scope;
 
             sys.AddComponent<ModeSwitch>();   // hold both grips: back to the menu
 
@@ -98,7 +104,7 @@ namespace SeptoMentor.EditorTools
             BuildNavigation();
             EditorBuildSettings.scenes = AllScenes.Select(p => new EditorBuildSettingsScene(p, true)).ToArray();
             AlwaysIncludeShaders("SeptoMentor/EndoTissue", "SeptoMentor/LabelId", "SeptoMentor/MonitorComposite", "SeptoMentor/Ghost",
-                                 "SeptoMentor/CtSlice", "SeptoMentor/NavGhost", "SeptoMentor/NavMarker");
+                                 "SeptoMentor/CtSlice", "SeptoMentor/NavGhost", "SeptoMentor/NavMarker", "SeptoMentor/ORSurface");
         }
 
         /// <summary>XR origin + camera. Passthrough = transparent clear + AR Foundation camera manager (Meta OpenXR).</summary>

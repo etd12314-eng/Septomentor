@@ -26,6 +26,7 @@ namespace SeptoMentor.EditorTools
             ConfigurePlayer();
             XRSetup.Configure();
             WriteMentorConfig();
+            ImportTmpEssentials();
             AssetDatabase.Refresh();
             SceneBuilder.Build();
 
@@ -85,7 +86,22 @@ namespace SeptoMentor.EditorTools
             Debug.Log($"[SeptoMentor] mentor_config: endpoint={(cfg.endpoint == "" ? "(none, AI off)" : cfg.endpoint)}, token={(cfg.token == "" ? "none" : "set")}, allowFrames={cfg.allowFrames}");
         }
 
-        static string Arg(string name)
+        /// <summary>
+        /// TextMeshPro's default font and settings ship as a .unitypackage inside com.unity.ugui; without
+        /// them Label3D falls back to blurry legacy TextMesh. Imported at build time when missing.
+        /// </summary>
+        static void ImportTmpEssentials()
+        {
+            if (AssetDatabase.FindAssets("t:TMP_Settings").Length > 0) return;
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(TMPro.TextMeshPro).Assembly);
+            var pkg = info != null ? Path.Combine(info.resolvedPath, "Package Resources", "TMP Essential Resources.unitypackage") : null;
+            if (pkg == null || !File.Exists(pkg)) { Debug.LogWarning("[SeptoMentor] TMP Essential Resources not found; legacy text will be used."); return; }
+            AssetDatabase.ImportPackage(pkg, false);
+            AssetDatabase.Refresh();
+            Debug.Log("[SeptoMentor] TMP Essential Resources imported: " + (AssetDatabase.FindAssets("t:TMP_Settings").Length > 0 ? "ok" : "pending"));
+        }
+
+                static string Arg(string name)
         {
             var args = Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++) if (args[i] == name) return args[i + 1];

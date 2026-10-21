@@ -61,6 +61,7 @@ Shader "SeptoMentor/MonitorComposite"
 
                 float r = length(i.uv - 0.5) * 2.0;
                 float mask = lerp(1.0, 1.0 - smoothstep(0.94, 1.0, r), _Circle);
+                mask *= lerp(1.0, 0.6, smoothstep(0.55, 0.95, r) * _Circle);   // optical vignetting toward the field stop
                 return fixed4(col * mask, 1);
             }
             ENDCG

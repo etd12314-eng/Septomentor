@@ -10,19 +10,20 @@ namespace SeptoMentor
     ///   A: next phase   B: cycle instrument   X: recenter   Y: ask AI
     ///   Right stick: scope look (hold right grip: twist instrument)   Left stick Y: advance scope
     ///   Right trigger: toggle labels   Left trigger: simulate mucosal tear (synthetic only)
+    ///   Right stick click: hand-held scope on/off (the right controller is the endoscope)
     /// Editor keys: N, I, R, Q, L, T, arrows (look), W/S (advance), G (hold = twist).
     /// Hands (controllers put down): left palm toward the face = button menu (poke with the right index finger);
     /// right pinch and drag = scope look (left/right/up/down) and advance (push away / pull back).
     /// </summary>
     public class ControllerInput : MonoBehaviour
     {
-        public event Action NextPhase, CycleInstrument, Recenter, AskAI, ToggleLabels, SimulateTear;
+        public event Action NextPhase, CycleInstrument, Recenter, AskAI, ToggleLabels, SimulateTear, ToggleScope;
 
         public Vector2 Look { get; private set; }
         public float Advance { get; private set; }
         public float Twist { get; private set; }
 
-        bool _a, _b, _x, _y, _rt, _lt;
+        bool _a, _b, _x, _y, _rt, _lt, _rs;
         HandMenu _menu;
         readonly Pinch _pinch = new Pinch(true);
         Vector3 _pinchStart;
@@ -33,7 +34,7 @@ namespace SeptoMentor
             _menu.head = Camera.main != null ? Camera.main.transform : null;
             _menu.AddButton("next", "Next phase\n(A)"); _menu.AddButton("instr", "Instrument\n(B)"); _menu.AddButton("recenter", "Recenter\n(X)");
             _menu.AddButton("ai", "Ask AI\n(Y)"); _menu.AddButton("labels", "Labels"); _menu.AddButton("tear", "Sim. tear");
-            _menu.AddButton("home", "Hold 2 s:\nmenu");
+            _menu.AddButton("scope", "Scope:\nhand / auto"); _menu.AddButton("home", "Hold 2 s:\nmenu");
             new GameObject("Hands").AddComponent<HandSkeleton>();   // VR: the real hands are not visible
         }
 
@@ -48,6 +49,7 @@ namespace SeptoMentor
             Edge(left, CommonUsages.secondaryButton, ref _y, AskAI);
             EdgeTrigger(right, ref _rt, ToggleLabels);
             EdgeTrigger(left, ref _lt, SimulateTear);
+            Edge(right, CommonUsages.primary2DAxisClick, ref _rs, ToggleScope);
 
             right.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 rs);
             left.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 ls);
@@ -72,6 +74,7 @@ namespace SeptoMentor
             if (_menu.Pressed("ai")) AskAI?.Invoke();
             if (_menu.Pressed("labels")) ToggleLabels?.Invoke();
             if (_menu.Pressed("tear")) SimulateTear?.Invoke();
+            if (_menu.Pressed("scope")) ToggleScope?.Invoke();
 
             // Pinch-and-drag acts as a joystick: 6 cm of hand travel = full deflection.
             _pinch.Update(!_menu.Visible);
