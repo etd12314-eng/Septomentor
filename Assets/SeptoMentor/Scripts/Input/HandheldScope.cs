@@ -9,7 +9,8 @@ namespace SeptoMentor
     /// (camera head + 18 cm, 4 mm shaft).
     /// The scope tip, relative to the patient's head on the OR table, drives the virtual endoscope
     /// inside the anatomy: the head's nostril is mapped 1:1 onto the start of the anatomy's scope path.
-    /// Tissue contact gives a haptic buzz; rubbing the mucosa for long raises a caution.
+    /// With the procedural (phantom-aligned) anatomy both nostrils are open: the scope enters whichever it is brought to.
+    /// Tissue contact gives a haptic buzz (after a short tolerance); rubbing the mucosa for long raises a caution.
     /// With the controller put down (or hand-held mode off) the provider's autopilot / thumbsticks take over.
     /// </summary>
     [DefaultExecutionOrder(-100)]   // before the provider moves and renders the endoscope
@@ -23,6 +24,10 @@ namespace SeptoMentor
         [Tooltip("Shaft start in front of the grip (camera head + coupler), m.")]
         public float shaftOffset = 0.06f;
         public XRNode hand = XRNode.LeftHand;
+        [Tooltip("Steadies the endoscope image against tracking jitter and hand tremor.")]
+        public PoseFilter smoothing = new PoseFilter { minCutoff = 1.2f };
+        [Tooltip("Mucosal contact must last this long (s) before the controller vibrates.")]
+        public float contactTolerance = 0.25f;
 
         /// <summary>(message, severity) for the monitor / speech.</summary>
         public event Action<string, string, Severity> Hint;   // voice key, message, severity
@@ -97,12 +102,14 @@ namespace SeptoMentor
             {
                 if (provider != null) provider.externalPose = false;
                 InNose = Touching = false;
+                smoothing.Reset();
                 return;
             }
 
             var origin = head != null ? head.parent : null;
             var wPos = origin != null ? origin.TransformPoint(pos) : pos;
             var wRot = origin != null ? origin.rotation * rot : rot;
+            smoothing.Filter(ref wPos, ref wRot, Time.deltaTime);
             transform.SetPositionAndRotation(wPos, wRot);
 
             var tip = wPos + wRot * new Vector3(0, 0, shaftOffset + shaftLength);
@@ -111,10 +118,17 @@ namespace SeptoMentor
             var rotH = Quaternion.Inverse(ph.rotation) * wRot;
 
             var patient = provider.patient;
-            if (!_sideKnown && patient.AnatomyRoot != null)
+            if (patient.PhantomAligned && !InNose)
             {
-                // Use the nostril on the same side as the anatomy's scope path (the head frame is mirrored into it).
-                _rightNostril = patient.PhantomAligned ? NasalAnatomy.Mirror > 0 : patient.pathStart.x < patient.LocalBounds.center.x;
+                // Both cavities are modelled: follow the nostril the scope is brought to (kept while it is inside).
+                bool right = (tipH - OperatingRoom.Nostril(true)).sqrMagnitude < (tipH - OperatingRoom.Nostril(false)).sqrMagnitude;
+                if (right != _rightNostril || !_sideKnown) { _rightNostril = right; _nostril = OperatingRoom.Nostril(right); }
+                _sideKnown = true;
+            }
+            else if (!_sideKnown && patient.AnatomyRoot != null)
+            {
+                // Loaded anatomy: one cavity, on the side of its scope path (the head frame is mirrored into it).
+                _rightNostril = patient.pathStart.x < patient.LocalBounds.center.x;
                 _nostril = OperatingRoom.Nostril(_rightNostril);
                 _sideKnown = true;
             }
@@ -127,25 +141,33 @@ namespace SeptoMentor
             provider.externalRotation = HeadToAnatomy * rotH;
 
             var rel = tipH - _nostril;
+            bool wasIn = InNose;
             InNose = rel.z < 0.004f && Mathf.Abs(rel.x) < 0.02f && rel.y > -0.015f && rel.y < 0.05f && rel.z > -0.12f;
+            if (InNose && !wasIn && patient.PhantomAligned)
+                Hint?.Invoke(_rightNostril ? "side_right" : "side_left",
+                             _rightNostril ? "Right nasal cavity (the side not operated on)." : "Left nasal cavity (operated side).", Severity.Info);
             ContactFeedback(patient.transform.TransformPoint(local));
 
             if (!InNose && Time.time > _nextHint && tipH.magnitude < 0.25f)
             {
                 _nextHint = Time.time + 10f;
-                Hint?.Invoke("scope_guide", $"Guide the scope into the patient's {(_rightNostril ? "right" : "left")} nostril, along the nasal floor.", Severity.Tip);
+                Hint?.Invoke("scope_guide", patient.PhantomAligned
+                    ? "Guide the scope into either nostril along the nasal floor; the septoplasty is done through the left."
+                    : $"Guide the scope into the patient's {(_rightNostril ? "right" : "left")} nostril, along the nasal floor.", Severity.Tip);
             }
         }
 
         void ContactFeedback(Vector3 endoWorld)
         {
-            Touching = InNose && Physics.CheckSphere(endoWorld, 0.0015f);
+            Touching = InNose && Physics.CheckSphere(endoWorld, 0.001f);
             if (!Touching) { _touchSince = -1; return; }
-            if (_touchSince < 0) _touchSince = Time.time;
+            if (_touchSince < 0) { _touchSince = Time.time; _nextBuzz = Time.time + contactTolerance; }
+            float held = Time.time - _touchSince;
+            if (held < contactTolerance) return;   // grazes shorter than the tolerance stay silent
             // Soft, growing buzz: a scope rubbing the mucosa smears the lens and makes it bleed.
-            Haptics.Rumble(hand, 0.25f + 0.25f * Mathf.Clamp01((Time.time - _touchSince) / 1.2f));
-            if (Time.time > _nextBuzz) { _nextBuzz = Time.time + 0.6f; Haptics.Pulse(hand, 0.45f, 0.03f); }
-            if (Time.time - _touchSince > 1.2f && Time.time > _nextHint)
+            Haptics.Rumble(hand, 0.15f + 0.2f * Mathf.Clamp01((held - contactTolerance) / 1.2f));
+            if (Time.time > _nextBuzz) { _nextBuzz = Time.time + 1f; Haptics.Pulse(hand, 0.3f, 0.03f); }
+            if (held > 1.5f && Time.time > _nextHint)
             {
                 _nextHint = Time.time + 6f;
                 Hint?.Invoke("scope_rub", "The scope tip is rubbing the mucosa - pull back slightly and keep it centred (bleeding, smeared lens).", Severity.Caution);

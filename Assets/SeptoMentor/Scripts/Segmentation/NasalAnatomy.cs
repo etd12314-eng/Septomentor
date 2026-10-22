@@ -16,7 +16,9 @@ namespace SeptoMentor
     /// bluish-white cartilage at runtime), resection window cartilage (bitten out chunk by chunk, keeping a
     /// ~10 mm L-strut) with the contralateral mucoperichondrium behind it.
     ///
-    /// The cavity is the patient's LEFT side (left-nostril approach). The field is written for the right side
+    /// The operated cavity is the patient's LEFT side (left-nostril approach). The RIGHT cavity is modelled too, as the
+    /// mirror image of the same walls facing the concave side of the deviation (wider), so the endoscope can examine
+    /// both sides; it has no surgical pieces. The field is written for the right side
     /// ("work frame") and mirrored at the end: L_patient = Mirror * L_work. Everything public that takes or returns
     /// millimetres (Depth, SeptumFace, the flap constants) is in the work frame.
     /// Frame of the meshes: the CT phantom's (L, S, P), in metres in the VirtualPatient's local space
@@ -131,9 +133,13 @@ namespace SeptoMentor
 
         public enum Wall { Septum, Lateral, Floor, Roof, Vestibule, Pharynx, InfTurb, MidTurb, Torus, SupTurb, Uncinate, Adenoid, Count }
 
-        static void Components(float l, float s, float p, float[] c)
+        /// <summary>
+        /// Wall distances of one cavity. side = +1: the operated cavity; -1: the other one, evaluated mirrored
+        /// (pass -L) so the same walls apply, its septal face on the concave side of the deviation.
+        /// </summary>
+        static void Components(float l, float s, float p, float[] c, float side = 1f)
         {
-            c[(int)Wall.Septum] = l - SeptumFace(s, p);
+            c[(int)Wall.Septum] = l - (side * Deviation(s, p) - 1.8f - SwellBody(s, p));
             c[(int)Wall.Lateral] = (-15f + Mathf.Max(0, s - 2) * 0.38f) - l;
             float ant = Mathf.Max(0, -60 - p);
             c[(int)Wall.Floor] = -27f + 0.004f * ant * ant - s;
@@ -153,10 +159,21 @@ namespace SeptoMentor
             c[(int)Wall.Adenoid] = Ell(l, s, p, 0, 10, 24, 13, 6, 7) - 1.4f * (Noise(l / 2f, s / 2f, p / 2f) - 0.5f);
         }
 
-        /// <summary>Signed distance to the airway wall, mm: negative in air, positive in tissue.</summary>
-        static float Air(float l, float s, float p, float[] c)
+        /// <summary>
+        /// Signed distance to the airway wall of both cavities, mm: negative in air, positive in tissue.
+        /// <paramref name="c"/> gets the wall distances of the nearer cavity (<paramref name="other"/>: the right one, mirrored).
+        /// </summary>
+        static float Air(float l, float s, float p, float[] c, float[] c2, out bool other)
         {
-            Components(l, s, p, c);
+            float a = Cavity(l, s, p, c, 1f), b = Cavity(-l, s, p, c2, -1f);
+            other = b < a;
+            if (other) Array.Copy(c2, c, c.Length);
+            return Mathf.Min(a, b) - 0.2f * (Noise(l / 1.4f, s / 1.4f, p / 1.4f) - 0.5f);   // mucosal micro-relief
+        }
+
+        static float Cavity(float l, float s, float p, float[] c, float side)
+        {
+            Components(l, s, p, c, side);
             float cav = SMax(SMax(c[(int)Wall.Septum], c[(int)Wall.Lateral], 2), SMax(c[(int)Wall.Floor], c[(int)Wall.Roof], 2), 2);
             cav = SMax(cav, SMax(-74f - p, p - PosteriorEdge(s), 2), 2);
             float a = SMin(SMin(cav, c[(int)Wall.Vestibule], 3), c[(int)Wall.Pharynx], 3);
@@ -167,19 +184,20 @@ namespace SeptoMentor
             a = SMax(a, -c[(int)Wall.SupTurb], 1.2f);
             a = SMax(a, -c[(int)Wall.Uncinate], 1f);
             a = SMax(a, -c[(int)Wall.Torus], 2);
-            a = SMax(a, -c[(int)Wall.Adenoid], 2);
-            return a - 0.2f * (Noise(l / 1.4f, s / 1.4f, p / 1.4f) - 0.5f);   // mucosal micro-relief
+            return SMax(a, -c[(int)Wall.Adenoid], 2);
         }
 
-        static readonly float[] Scratch = new float[(int)Wall.Count];
+        static readonly float[] Scratch = new float[(int)Wall.Count], Scratch2 = new float[(int)Wall.Count];
 
         /// <summary>
-        /// Tissue depth at a point (mm, L/S/P): positive inside tissue, negative in air, plus the wall that is closest.
-        /// Main thread only (shared scratch buffer).
+        /// Tissue depth at a point (mm, L/S/P work frame): positive inside tissue, negative in air, plus the wall that is closest
+        /// (of the nearer cavity). Main thread only (shared scratch buffers).
         /// </summary>
-        public static float Depth(Vector3 mm, out Wall wall)
+        public static float Depth(Vector3 mm, out Wall wall) => Depth(mm, out wall, out _);
+
+        public static float Depth(Vector3 mm, out Wall wall, out bool otherSide)
         {
-            float d = Air(mm.x, mm.y, mm.z, Scratch);
+            float d = Air(mm.x, mm.y, mm.z, Scratch, Scratch2, out otherSide);
             int best = 0;
             for (int i = 1; i < (int)Wall.Count; i++) if (Mathf.Abs(Scratch[i]) < Mathf.Abs(Scratch[best])) best = i;
             wall = (Wall)best;
@@ -199,10 +217,11 @@ namespace SeptoMentor
 
             progress?.Invoke("airway surface");
             var min = new Vector3(-19f, -31f, -97f);
-            var n = new Vector3Int(Mathf.CeilToInt(35f / stepMm), Mathf.CeilToInt(57f / stepMm), Mathf.CeilToInt(130f / stepMm));
+            var n = new Vector3Int(Mathf.CeilToInt(38f / stepMm), Mathf.CeilToInt(57f / stepMm), Mathf.CeilToInt(130f / stepMm));
             var toModel = Matrix4x4.TRS(min * 0.001f, Quaternion.identity, Vector3.one * stepMm * 0.001f);
             var buf = new float[(int)Wall.Count];
-            var sn = SurfaceNets.Extract((i, j, k) => Air(min.x + i * stepMm, min.y + j * stepMm, min.z + k * stepMm, buf), 0f,
+            var buf2 = new float[(int)Wall.Count];
+            var sn = SurfaceNets.Extract((i, j, k) => Air(min.x + i * stepMm, min.y + j * stepMm, min.z + k * stepMm, buf, buf2, out _), 0f,
                                          Vector3Int.zero, n, 1, toModel).Smooth(2);
 
             progress?.Invoke("classifying");
@@ -210,10 +229,25 @@ namespace SeptoMentor
             {
                 int a = sn.triangles[t], b = sn.triangles[t + 1], c = sn.triangles[t + 2];
                 var m = (sn.vertices[a] + sn.vertices[b] + sn.vertices[c]) * (1000f / 3f);
-                Components(m.x, m.y, m.z, buf);
+                bool other = m.x > Deviation(m.y, m.z);
+                Components(other ? -m.x : m.x, m.y, m.z, buf, other ? -1f : 1f);
                 int best = 0;
                 for (int i = 1; i < (int)Wall.Count; i++) if (Mathf.Abs(buf[i]) < Mathf.Abs(buf[best])) best = i;
                 Piece pc;
+                if (other && m.z < 5f)
+                {
+                    // The right cavity: whole walls, no surgical pieces (the nasopharynx behind is shared).
+                    switch ((Wall)best)
+                    {
+                        case Wall.Septum: pc = Get("Right_Septum", Structure.SeptalCartilage, Contra); break;
+                        case Wall.InfTurb: pc = Get("Right_InferiorTurbinate", Structure.InferiorTurbinate, Turbinate); break;
+                        case Wall.MidTurb: case Wall.SupTurb: pc = Get("Right_MiddleTurbinate", Structure.MiddleTurbinate, Turbinate * 1.05f); break;
+                        case Wall.Floor: pc = Get("Right_NasalFloor", Structure.NasalFloor, Floor); break;
+                        case Wall.Vestibule: pc = Get("Right_Vestibule", Structure.Background, Skin); break;
+                        default: pc = Get("Right_LateralWall", Structure.SinonasalBone, Mucosa * 0.95f); break;
+                    }
+                }
+                else
                 switch ((Wall)best)
                 {
                     case Wall.Septum:
@@ -264,7 +298,8 @@ namespace SeptoMentor
             WindowRim(Get("Cartilage_CutEdge", Structure.SeptalCartilage, Cartilage * 0.92f), win, stepMm);
 
             progress?.Invoke("vibrissae");
-            Vibrissae(Get("Vibrissae", Structure.Background, Hair));
+            Vibrissae(Get("Vibrissae", Structure.Background, Hair), 1f);
+            Vibrissae(Get("Right_Vibrissae", Structure.Background, Hair), -1f);
 
             progress?.Invoke("surface colour, mirroring to the left side");
             var list = new List<Piece>();
@@ -275,14 +310,17 @@ namespace SeptoMentor
         /// <summary>Per-vertex look (computed in the work frame), then mirrored to the patient's left side.</summary>
         static void Finish(Piece pc)
         {
-            pc.look = pc.name.StartsWith("Vibrissae") ? Look.Plain
-                    : pc.name.StartsWith("Vestibule") ? Look.Skin
+            pc.look = pc.name.Contains("Vibrissae") ? Look.Plain
+                    : pc.name.Contains("Vestibule") ? Look.Skin
                     : pc.name.Contains("Turbinate") ? Look.Turbinate
                     : pc.name.StartsWith("Cartilage") || pc.name == "Incision_Bed" ? Look.Cartilage
                     : Look.Mucosa;
+            bool right = pc.name.StartsWith("Right_");
             for (int i = 0; i < pc.verts.Count; i++)
             {
-                Shade(pc.look, pc.verts[i] * 1000f, out var c, out var uv);
+                var w = pc.verts[i] * 1000f;
+                if (right) w.x = -w.x;   // shade the right cavity like its mirror image
+                Shade(pc.look, w, out var c, out var uv);
                 pc.colors.Add(c);
                 pc.uvs.Add(uv);
                 pc.verts[i] = FromWork(pc.verts[i]);
@@ -385,8 +423,8 @@ namespace SeptoMentor
             }
         }
 
-        /// <summary>Short dark hairs on the vestibular skin, pointing toward the nostril opening.</summary>
-        static void Vibrissae(Piece pc)
+        /// <summary>Short dark hairs on the vestibular skin, pointing toward the nostril opening (side -1: the other nostril).</summary>
+        static void Vibrissae(Piece pc, float side)
         {
             var rnd = new System.Random(7);
             Vector3 a = new Vector3(-7.5f, -27f, -92f), b = new Vector3(-8f, -19f, -68f);
@@ -403,7 +441,12 @@ namespace SeptoMentor
                 var tip = root + dir * len + radial * 0.3f;
                 var s1 = Vector3.Cross(dir, radial).normalized * w; var s2 = radial * w;
                 Vector3 r0 = (root + s1) * 0.001f, r1 = (root - s1 + s2) * 0.001f, r2 = (root - s1 - s2) * 0.001f, tp = tip * 0.001f;
-                AddTri(pc, r0, r1, tp); AddTri(pc, r1, r2, tp); AddTri(pc, r2, r0, tp);
+                if (side < 0)
+                {
+                    r0.x = -r0.x; r1.x = -r1.x; r2.x = -r2.x; tp.x = -tp.x;
+                    AddTri(pc, r1, r0, tp); AddTri(pc, r2, r1, tp); AddTri(pc, r0, r2, tp);
+                }
+                else { AddTri(pc, r0, r1, tp); AddTri(pc, r1, r2, tp); AddTri(pc, r2, r0, tp); }
             }
         }
     }

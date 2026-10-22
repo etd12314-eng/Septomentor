@@ -46,7 +46,10 @@ l_strut	Kaudal septuma yakın kesiyorsunuz. L desteği koruyun.
 ppe_torque	Perpendiküler plakada döndürmek kafa tabanına güç iletebilir. Keskin kesin.
 ppe_near	Perpendiküler plakadasınız. Kesin, döndürmeyin.
 scope_rub	Endoskop ucu mukozaya sürtünüyor. Hafifçe geri çekin ve ortada tutun.
-scope_guide	Endoskopu hastanın sol burun deliğinden, burun tabanı boyunca ilerletin.
+scope_guide	Endoskopu burun deliklerinden birinden, burun tabanı boyunca ilerletin. Septoplasti sol taraftan yapılır.
+side_left	Sol burun boşluğu, ameliyat tarafı.
+side_right	Sağ burun boşluğu, karşı taraf.
+contra_side	Burası sağ burun boşluğu. Septoplasti sol taraftan yapılıyor, burada yalnızca inceleme yapın.
 tool_Scalpel	Bistüri. İnsizyon hattı boyunca kıkırdağa kadar çekin.
 tool_FreerElevator	Kaldırıcı. İnsizyondan girip kıkırdak üzerinde süpürün.
 tool_ScissorsForceps	Kesici makas. Tetikle ısırın.

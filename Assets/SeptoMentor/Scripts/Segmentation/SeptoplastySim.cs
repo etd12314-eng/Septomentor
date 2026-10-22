@@ -23,6 +23,8 @@ namespace SeptoMentor
         public MentorEngine mentor;
         [Tooltip("Lateral lift of a fully elevated flap, mm.")]
         public float flapLiftMm = 4f;
+        [Tooltip("Plain wall contact shallower than this (mm) does not vibrate.")]
+        public float contactTolerance = 0.8f;
 
         /// <summary>(voice key, message, severity) for the monitor / voice / log.</summary>
         public event Action<string, string, Severity> Hint;
@@ -83,6 +85,7 @@ namespace SeptoMentor
         Vector3 _lastMm;
         bool _hadTip;
         float _travel;   // mm since the last "texture" click
+        bool _rightSide;   // the tip went in through the right nostril (the cavity that is not operated on)
 
         void Start()
         {
@@ -242,11 +245,25 @@ namespace SeptoMentor
             if (tool == Structure.Suction && trigger) Suction(mm, hand);
 
             // Only inside the modelled nasal cavity (behind the nostril).
-            bool inside = mm.z > -96f && mm.z < 30f && mm.x > -19f && mm.x < 16f && mm.y > -31f && mm.y < 26f;
+            bool inside = mm.z > -96f && mm.z < 30f && mm.x > -19f && mm.x < 19f && mm.y > -31f && mm.y < 26f;
             if (!inside) { _travel = 0; return; }
+
+            float depth = NasalAnatomy.Depth(mm, out var wall, out bool other);
+            // The side is decided in the vestibule and kept deeper in (a blade pushed into the septum stays on its side).
+            if (mm.z < -74f) _rightSide = other;
+            if (_rightSide)
+            {
+                // Right cavity: examination only, no septal work from this side.
+                float r = Contact(depth, 0.12f);
+                if (depth > 0.4f) OffTarget(tool, wall, mm, depth, triggerDown, hand);
+                else if (mm.z > -70f && tool != Structure.Suction)
+                    Say("contra_side", "This is the right nasal cavity. The septoplasty is done from the left side - only examine here.", Severity.Tip, 30f);
+                if (r > 0) Haptics.Rumble(hand, r);
+                GrowBlood();
+                return;
+            }
             if (_startTime < 0) _startTime = Time.time;
 
-            float depth = NasalAnatomy.Depth(mm, out var wall);
             float s = mm.y, p = mm.z;
             float face = NasalAnatomy.SeptumFace(s, p);
             float pen0 = mm.x - face;   // below the original mucosal surface
@@ -273,7 +290,7 @@ namespace SeptoMentor
                         rumble = Phase == SurgicalPhase.Closure ? LayBack(s, p, pen0 + lift, hand) : Contact(pocket ? pen0 - NasalAnatomy.CartilageDepth : pen0, 0.12f);
                         break;
                 }
-                if (pocket && tool != Structure.ScissorsForceps) rumble = Mathf.Max(rumble, 0.08f);   // the flap brushing the shaft
+                if (pocket && tool != Structure.ScissorsForceps) rumble = Mathf.Max(rumble, 0.06f);   // the flap brushing the shaft
             }
             else
             {
@@ -287,12 +304,15 @@ namespace SeptoMentor
             GrowBlood();
         }
 
-        /// <summary>Plain contact: harder press, stronger buzz; a light click every 2 mm while sliding (surface texture).</summary>
+        /// <summary>
+        /// Plain contact beyond the tolerance: harder press, stronger buzz; a light click every 4 mm while sliding (surface texture).
+        /// </summary>
         float Contact(float depth, float baseAmp)
         {
+            depth -= contactTolerance;
             if (depth <= 0) return 0;
-            if (_travel > 2f) { _travel = 0; Haptics.Pulse(XRNode.RightHand, 0.35f, 0.012f); }
-            return baseAmp + 0.55f * Mathf.Clamp01(depth / 2.5f);
+            if (_travel > 4f) { _travel = 0; Haptics.Pulse(XRNode.RightHand, 0.25f, 0.012f); }
+            return baseAmp + 0.45f * Mathf.Clamp01(depth / 3f);
         }
 
         // ------------------------------------------------------------------ incision

@@ -23,6 +23,8 @@ namespace SeptoMentor
         public float grabRadius = 0.12f;
         [Tooltip("Grip to instrument tip, m.")]
         public float reach = 0.19f;
+        [Tooltip("Steadies the instrument against tracking jitter and hand tremor.")]
+        public PoseFilter smoothing = new PoseFilter();
 
         /// <summary>(voice key, message, severity) for the monitor / voice.</summary>
         public event Action<string, string, Severity> Hint;
@@ -44,6 +46,7 @@ namespace SeptoMentor
         Tool[] _tools;
         int _held = -1, _hover = -1;
         bool _grip, _trigger;
+        float[] _dist;
 
         void Start()
         {
@@ -147,12 +150,15 @@ namespace SeptoMentor
             if (!Active)
             {
                 if (provider != null && provider.Instrument != null) provider.Instrument.SetExternal(null);
+                smoothing.Reset();
                 return;
             }
 
             var origin = head != null ? head.parent : null;
             var wPos = origin != null ? origin.TransformPoint(pos) : pos;
             var wRot = origin != null ? origin.rotation * rot : rot;
+            if (_held >= 0) smoothing.Filter(ref wPos, ref wRot, Time.deltaTime);
+            else smoothing.Reset();
 
             dev.TryGetFeatureValue(CommonUsages.gripButton, out bool grip);
             dev.TryGetFeatureValue(CommonUsages.trigger, out float trig);
@@ -186,19 +192,26 @@ namespace SeptoMentor
             }
         }
 
-        /// <summary>Highlights the instrument the open hand is over (grip would take it).</summary>
+        /// <summary>
+        /// Highlights the instrument the open hand is over (grip would take it). Hysteresis: the highlighted one stays
+        /// until the hand is 3 cm farther out or clearly nearer another, so it does not flicker (and buzz) between neighbours.
+        /// </summary>
         void Hover(Vector3 handPos)
         {
             int best = -1;
             float bestD = grabRadius;
             if (_held < 0)
+            {
+                if (_dist == null) _dist = new float[_tools.Length];
+                var d = _dist;
                 for (int i = 0; i < _tools.Length; i++)
                 {
-                    if (_tools[i].returning >= 0) continue;
                     var r = _tools[i].model.root;
-                    float d = Vector3.Distance(handPos, r.position - r.forward * 0.13f);   // middle of the handle
-                    if (d < bestD) { bestD = d; best = i; }
+                    d[i] = _tools[i].returning >= 0 ? float.MaxValue : Vector3.Distance(handPos, r.position - r.forward * 0.13f);   // middle of the handle
+                    if (d[i] < bestD) { bestD = d[i]; best = i; }
                 }
+                if (_hover >= 0 && d[_hover] < grabRadius + 0.03f && (best < 0 || d[_hover] < bestD + 0.02f)) best = _hover;
+            }
             if (best == _hover) return;
             if (_hover >= 0) Glow(_tools[_hover], 0f);
             _hover = best;
