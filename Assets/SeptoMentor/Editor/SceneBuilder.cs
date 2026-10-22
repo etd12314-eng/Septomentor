@@ -101,9 +101,11 @@ namespace SeptoMentor.EditorTools
             app.scope = scope;
             var sim = sys.AddComponent<SeptoplastySim>();
             sim.provider = provider; sim.mentor = mentor;
+            var fess = sys.AddComponent<FessSim>();
+            fess.provider = provider;
             var hands = sys.AddComponent<HandInstruments>();
-            hands.provider = provider; hands.room = room; hands.sim = sim; hands.head = camGo.transform;
-            app.hands = hands; app.sim = sim;
+            hands.provider = provider; hands.room = room; hands.sim = sim; hands.fess = fess; hands.head = camGo.transform;
+            app.hands = hands; app.sim = sim; app.fess = fess;
             var voice = sys.AddComponent<VoiceCoach>();
             voice.speech = speech;
             var commands = sys.AddComponent<VoiceCommands>();

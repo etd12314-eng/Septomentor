@@ -11,10 +11,12 @@ namespace SeptoMentor
     /// </summary>
     public class VirtualInstrument : MonoBehaviour
     {
-        public static readonly Structure[] Cycle =
-            { Structure.Background, Structure.Scalpel, Structure.FreerElevator, Structure.ScissorsForceps, Structure.Suction };
+        /// <summary>Instruments the B button cycles through without a tracked hand (set per procedure).</summary>
+        public Tool[] cycle = { Tool.None, Tool.Scalpel, Tool.Freer, Tool.ThroughCut, Tool.Suction };
 
+        /// <summary>The instrument's class in the label map.</summary>
         public Structure Current { get; private set; } = Structure.Background;
+        public Tool CurrentTool { get; private set; } = Tool.None;
         public Transform Tip { get; private set; }
 
         /// <summary>Roll input in [-1,1] (e.g. thumbstick while grip held) to simulate twisting.</summary>
@@ -23,6 +25,8 @@ namespace SeptoMentor
         public float strokeHz = 0.6f;
         /// <summary>Forceps jaws: 0 closed, 1 open.</summary>
         public float jawOpen = 1f;
+        /// <summary>Microdebrider running (trigger held).</summary>
+        public bool running;
 
         /// <summary>Angular speed of the instrument in deg/s (simulated torque proxy).</summary>
         public float AngularSpeed { get; private set; }
@@ -65,16 +69,16 @@ namespace SeptoMentor
             transform.localRotation = localRotation;
         }
 
-        public Structure Next()
+        public Tool Next()
         {
-            int i = System.Array.IndexOf(Cycle, Current);
-            Set(Cycle[(i + 1) % Cycle.Length]);
-            return Current;
+            int i = System.Array.IndexOf(cycle, CurrentTool);
+            Set(cycle[(i + 1) % cycle.Length]);
+            return CurrentTool;
         }
 
-        public void Set(Structure s)
+        public void Set(Tool s)
         {
-            if (s == Current && (_body != null || s == Structure.Background)) return;
+            if (s == CurrentTool && (_body != null || s == Tool.None)) return;
             if (_body != null)
             {
                 foreach (var p in Parts) _unregister?.Invoke(p);
@@ -82,8 +86,9 @@ namespace SeptoMentor
                 Destroy(_body.gameObject);
                 _body = null; Tip = null; _model = null;
             }
-            Current = s;
-            if (s == Structure.Background) return;
+            CurrentTool = s;
+            Current = InstrumentModels.LabelOf(s);
+            if (s == Tool.None) return;
 
             _body = new GameObject("Body").transform;
             _body.SetParent(transform, false);
@@ -108,6 +113,7 @@ namespace SeptoMentor
         {
             if (_body == null) { AngularSpeed = 0; return; }
             _model?.SetJaw(jawOpen);
+            _model?.Spin(running, Time.deltaTime);
             float dt = Mathf.Max(Time.deltaTime, 1e-4f);
             if (External)
             {

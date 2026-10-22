@@ -4,10 +4,18 @@ using UnityEngine;
 
 namespace SeptoMentor
 {
+    /// <summary>The instruments on the trays (septoplasty and FESS); each renders into the label map as one of the 4 instrument classes.</summary>
+    public enum Tool
+    {
+        None, Scalpel, Freer, ThroughCut, Suction,                                   // septoplasty
+        SickleKnife, BallProbe, Blakesley, BlakesleyUp, Backbiter, Microdebrider, CurvedSuction,   // FESS
+    }
+
     /// <summary>
-    /// Real-size septoplasty instruments, built as smooth procedural meshes (lathed shafts and handles, flat
-    /// profiled blades with a bevelled edge, swept tubes, finger rings). Frame: the working tip at the origin,
-    /// +Z the direction it points, the shaft and handle running back along -Z, +Y up (blade back / ring side).
+    /// Septoplasty and FESS instruments, built as smooth procedural meshes (lathed shafts and handles, flat
+    /// profiled blades with a bevelled edge, swept tubes and ribbons, finger rings), drawn from real instruments and then
+    /// scaled by <see cref="Scale"/> (slightly slimmer in the endoscope image). Frame: the working tip at the origin,
+    /// +Z the direction the shaft points, the shaft and handle running back along -Z, +Y up (blade back / ring side).
     /// The same model is used in the operating room (in the resident's hand) and, inside the anatomy, in front of
     /// the virtual endoscope. Meshes are built once and shared.
     /// </summary>
@@ -15,63 +23,102 @@ namespace SeptoMentor
     {
         public enum Finish { Steel, Dark, Handle }
 
+        /// <summary>Overall size relative to the real instruments.</summary>
+        public const float Scale = 0.85f;
+
         public class Model
         {
             public Transform root;
-            public Transform jawUpper, jawLower;   // through-cutting forceps only
+            public Transform jawUpper, jawLower;   // forceps: the moving jaw(s)
+            public Transform spinner;              // microdebrider inner blade
             public float length;
             /// <summary>Tip to where the hand holds it, m (the controller sits there).</summary>
             public float grip;
+            /// <summary>Opening angles of the upper / lower jaw at fully open, degrees.</summary>
+            public float jawUpperDeg = 28f, jawLowerDeg = 4f;
 
-            /// <summary>0 = closed, 1 = open (the upper jaw swings 28 deg, the lower one is nearly fixed).</summary>
+            /// <summary>0 = closed, 1 = open.</summary>
             public void SetJaw(float open)
             {
                 if (jawUpper == null) return;
                 float a = Mathf.Clamp01(open);
-                jawUpper.localRotation = Quaternion.Euler(-28f * a, 0, 0);
-                jawLower.localRotation = Quaternion.Euler(4f * a, 0, 0);
+                jawUpper.localRotation = Quaternion.Euler(-jawUpperDeg * a, 0, 0);
+                if (jawLower != null) jawLower.localRotation = Quaternion.Euler(jawLowerDeg * a, 0, 0);
+            }
+
+            /// <summary>Microdebrider: turns the inner blade while running.</summary>
+            public void Spin(bool on, float dt)
+            {
+                if (spinner != null && on) spinner.localRotation *= Quaternion.Euler(0, 0, 1800f * dt);
             }
         }
 
-        public static string DisplayName(Structure s)
+        /// <summary>The label-map class the instrument is drawn as (the segmentation model knows four instrument classes).</summary>
+        public static Structure LabelOf(Tool t)
         {
-            switch (s)
+            switch (t)
             {
-                case Structure.Scalpel: return "Scalpel (#15)";
-                case Structure.FreerElevator: return "Freer elevator";
-                case Structure.ScissorsForceps: return "Through-cutting forceps";
-                case Structure.Suction: return "Frazier suction";
+                case Tool.Scalpel: case Tool.SickleKnife: return Structure.Scalpel;
+                case Tool.Freer: case Tool.BallProbe: return Structure.FreerElevator;
+                case Tool.ThroughCut: case Tool.Blakesley: case Tool.BlakesleyUp: case Tool.Backbiter: case Tool.Microdebrider: return Structure.ScissorsForceps;
+                case Tool.Suction: case Tool.CurvedSuction: return Structure.Suction;
             }
-            return StructureInfo.DisplayName(s);
+            return Structure.Background;
+        }
+
+        public static bool Bites(Tool t) => t == Tool.ThroughCut || t == Tool.Blakesley || t == Tool.BlakesleyUp || t == Tool.Backbiter;
+
+        public static string DisplayName(Tool t)
+        {
+            switch (t)
+            {
+                case Tool.Scalpel: return "Scalpel (#15)";
+                case Tool.Freer: return "Freer elevator";
+                case Tool.ThroughCut: return "Through-cutting forceps";
+                case Tool.Suction: return "Frazier suction";
+                case Tool.SickleKnife: return "Sickle knife";
+                case Tool.BallProbe: return "Ball-tip probe";
+                case Tool.Blakesley: return "Blakesley forceps";
+                case Tool.BlakesleyUp: return "Blakesley 45 up";
+                case Tool.Backbiter: return "Backbiter";
+                case Tool.Microdebrider: return "Microdebrider";
+                case Tool.CurvedSuction: return "Curved suction";
+            }
+            return "none";
         }
 
         static readonly Dictionary<string, Mesh> Cache = new Dictionary<string, Mesh>();
 
         /// <summary>Builds the instrument under <paramref name="parent"/>; <paramref name="onPiece"/> styles each piece.</summary>
-        public static Model Build(Structure s, Transform parent, Action<GameObject, Finish> onPiece)
+        public static Model Build(Tool t, Transform parent, Action<GameObject, Finish> onPiece)
         {
-            var m = new Model { root = new GameObject(s.ToString()).transform };
+            var m = new Model { root = new GameObject(t.ToString()).transform };
             m.root.SetParent(parent, false);
-            var r = m.root;
-
-            switch (s)
+            switch (t)
             {
-                case Structure.Scalpel: Scalpel(m, onPiece); break;
-                case Structure.FreerElevator: Freer(m, onPiece); break;
-                case Structure.ScissorsForceps: Forceps(m, onPiece); break;
-                case Structure.Suction: Suction(m, onPiece); break;
+                case Tool.Scalpel: Scalpel(m, onPiece); break;
+                case Tool.Freer: Freer(m, onPiece); break;
+                case Tool.ThroughCut: Forceps(m, onPiece); break;
+                case Tool.Suction: Suction(m, onPiece); break;
+                case Tool.SickleKnife: Sickle(m, onPiece); break;
+                case Tool.BallProbe: BallProbe(m, onPiece); break;
+                case Tool.Blakesley: Blakesley(m, onPiece, 0f); break;
+                case Tool.BlakesleyUp: Blakesley(m, onPiece, 45f); break;
+                case Tool.Backbiter: Backbiter(m, onPiece); break;
+                case Tool.Microdebrider: Microdebrider(m, onPiece); break;
+                case Tool.CurvedSuction: CurvedSuction(m, onPiece); break;
             }
             return m;
         }
 
         // ------------------------------------------------------------------ instruments (all sizes in mm, converted)
 
-        const float MM = 0.001f;
+        const float MM = 0.001f * Scale;
 
         /// <summary>#15 blade on a #3 Bard-Parker handle (blade and handle share the YZ plane).</summary>
         static void Scalpel(Model m, Action<GameObject, Finish> on)
         {
-            m.length = 0.145f; m.grip = 0.075f;
+            m.length = 145f * MM; m.grip = 75f * MM;
             // Blade side view (z, y): straight back, small convex belly ending in the point; edge bevelled to a few microns.
             var blade = Get("Blade15", () =>
             {
@@ -95,21 +142,21 @@ namespace SeptoMentor
                 P(-18f, -1.4f);
                 return Plate(o, th, 2.6f, PlaneYZ);
             });
-            Add("Handle", handle, m.root, new Vector3(0, -0.0002f, 0), Quaternion.identity, Finish.Handle, on);
+            Add("Handle", handle, m.root, new Vector3(0, -0.2f, 0) * MM, Quaternion.identity, Finish.Handle, on);
             var rib = Get("ScalpelRib", () => Box(new Vector3(3.0f, 7.4f, 0.8f)));
             for (int i = 0; i < 9; i++)
-                Add("Rib", rib, m.root, new Vector3(0, -0.0002f, (-52f - 3.2f * i) * MM), Quaternion.identity, Finish.Steel, on);
+                Add("Rib", rib, m.root, new Vector3(0, -0.2f, -52f - 3.2f * i) * MM, Quaternion.identity, Finish.Steel, on);
         }
 
         /// <summary>Double-ended Freer: sharp spatula in front, blunt one at the back, octagonal knurled middle.</summary>
         static void Freer(Model m, Action<GameObject, Finish> on)
         {
-            m.length = 0.19f; m.grip = 0.095f;
+            m.length = 190f * MM; m.grip = 95f * MM;
             var spat = Get("FreerSpatula", () => Spatula(4.2f, 10f, 0.5f, 0.12f));
             // Front spatula angled up 8 deg, as the instrument is used flat on the septum.
             Add("Spatula", spat, m.root, Vector3.zero, Quaternion.Euler(-8, 0, 0), Finish.Steel, on);
             var shaft = Get("FreerShaft", () => Lathe(new[] { -9.5f, -14f, -40f, -58f, -60f }, new[] { 0.75f, 1.05f, 1.6f, 2.2f, 2.6f }, 16));
-            Add("Shaft", shaft, m.root, new Vector3(0, -0.0014f, 0), Quaternion.identity, Finish.Steel, on);
+            Add("Shaft", shaft, m.root, new Vector3(0, -1.4f, 0) * MM, Quaternion.identity, Finish.Steel, on);
             var mid = Get("FreerHandle", () =>
             {
                 var z = new List<float>(); var rr = new List<float>();
@@ -118,58 +165,17 @@ namespace SeptoMentor
                 z.Add(-134f); rr.Add(2.6f);
                 return Lathe(z.ToArray(), rr.ToArray(), 8);
             });
-            Add("Handle", mid, m.root, new Vector3(0, -0.0014f, 0), Quaternion.identity, Finish.Handle, on);
+            Add("Handle", mid, m.root, new Vector3(0, -1.4f, 0) * MM, Quaternion.identity, Finish.Handle, on);
             var back = Get("FreerShaftBack", () => Lathe(new[] { -134f, -136f, -160f, -178f }, new[] { 2.6f, 2.2f, 1.5f, 1.0f }, 16));
-            Add("ShaftBack", back, m.root, new Vector3(0, -0.0014f, 0), Quaternion.identity, Finish.Steel, on);
+            Add("ShaftBack", back, m.root, new Vector3(0, -1.4f, 0) * MM, Quaternion.identity, Finish.Steel, on);
             var blunt = Get("FreerBlunt", () => Spatula(4.8f, 11f, 0.7f, 0.35f));
-            Add("Blunt", blunt, m.root, new Vector3(0, -0.0014f, -0.1875f), Quaternion.Euler(8, 180, 0), Finish.Steel, on);
-        }
-
-        /// <summary>Straight through-cutting (Weil-Blakesley type) forceps: fenestrated cups, shaft, ring handle below.</summary>
-        static void Forceps(Model m, Action<GameObject, Finish> on)
-        {
-            m.length = 0.2f; m.grip = 0.15f;
-            const float hinge = -9.5f;
-            var cup = Get("ForcepsCup", () => Cup(9f, 3.3f, 1.25f));
-            var window = Get("ForcepsWindow", () => Lathe(new[] { 0f, -0.6f, -4.2f, -4.8f }, new[] { 0f, 0.7f, 0.7f, 0f }, 10, 1f, 0.35f));
-            m.jawUpper = new GameObject("JawUpper").transform;
-            m.jawLower = new GameObject("JawLower").transform;
-            foreach (var j in new[] { m.jawUpper, m.jawLower })
-            {
-                bool up = j == m.jawUpper;
-                j.SetParent(m.root, false);
-                j.localPosition = new Vector3(0, 0, hinge * MM);
-                var rot = up ? Quaternion.identity : Quaternion.Euler(0, 0, 180);
-                Add("Cup", cup, j, new Vector3(0, 0, -hinge * MM), rot, Finish.Steel, on);
-                Add("Window", window, j, new Vector3(0, (up ? 1.12f : -1.12f) * MM, (-hinge - 2.6f) * MM), Quaternion.identity, Finish.Dark, on);
-            }
-            var hingeBox = Get("ForcepsHinge", () => Lathe(new[] { -8f, -9f, -12f, -14f }, new[] { 1.4f, 1.9f, 1.9f, 1.6f }, 16, 1.1f, 0.9f));
-            Add("Hinge", hingeBox, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
-            var shaft = Get("ForcepsShaft", () => Lathe(new[] { -14f, -60f, -112f, -116f }, new[] { 1.6f, 1.75f, 2.1f, 2.6f }, 18));
-            Add("Shaft", shaft, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
-            // Handle: the fixed shank drops below the line of sight (scope stays clear), rings at its end.
-            var fixedShank = Get("ForcepsShankFixed", () => Sweep(new[] {
-                new Vector3(0, 0, -116), new Vector3(0, -3, -124), new Vector3(0, -14, -138), new Vector3(0, -30, -152), new Vector3(0, -40, -160) },
-                new[] { 2.4f, 2.4f, 2.2f, 2.1f, 2.0f }, 12));
-            Add("ShankFixed", fixedShank, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
-            var movingShank = Get("ForcepsShankMoving", () => Sweep(new[] {
-                new Vector3(0, 1.5f, -116), new Vector3(0, 1.5f, -128), new Vector3(0, -2, -146), new Vector3(0, -8, -164), new Vector3(0, -10, -170) },
-                new[] { 1.9f, 1.9f, 1.9f, 1.8f, 1.8f }, 12));
-            Add("ShankMoving", movingShank, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
-            var ring = Get("ForcepsRing", () => Torus(9.5f, 1.9f, 28, 10));
-            Add("FingerRing", ring, m.root, new Vector3(0, -48f * MM, -167f * MM), Quaternion.Euler(0, 0, 0), Finish.Steel, on);
-            Add("ThumbRing", ring, m.root, new Vector3(0, -12f * MM, -180f * MM), Quaternion.identity, Finish.Steel, on);
-            var spur = Get("ForcepsSpur", () => Sweep(new[] { new Vector3(0, -57, -165), new Vector3(0, -66, -160), new Vector3(0, -72, -150) }, new[] { 1.8f, 1.6f, 1.2f }, 10));
-            Add("Spur", spur, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
-            var screw = Get("ForcepsScrew", () => Lathe(new[] { -1.4f, -1.4f, 1.4f, 1.4f }, new[] { 0f, 2.2f, 2.2f, 0f }, 16));
-            Add("Screw", screw, m.root, new Vector3(0, 0, -120f * MM), Quaternion.Euler(0, 90, 0), Finish.Steel, on);
-            m.SetJaw(1f);
+            Add("Blunt", blunt, m.root, new Vector3(0, -1.4f, -187.5f) * MM, Quaternion.Euler(8, 180, 0), Finish.Steel, on);
         }
 
         /// <summary>Frazier 10 Fr: straight cannula, bend, finger-valve handle (thumb port), hose barb.</summary>
         static void Suction(Model m, Action<GameObject, Finish> on)
         {
-            m.length = 0.2f; m.grip = 0.14f;
+            m.length = 200f * MM; m.grip = 140f * MM;
             var path = new List<Vector3>();
             path.Add(Vector3.zero);
             path.Add(new Vector3(0, 0, -92));
@@ -193,6 +199,203 @@ namespace SeptoMentor
             var port = Get("FrazierPort", () => Lathe(new[] { 0f, -1.5f, -7f, -8f }, new[] { 0f, 1.6f, 0.9f, 0f }, 12, 1f, 0.4f));
             Add("ThumbPort", port, m.root, end * MM + dir * new Vector3(0, 3.95f, -16f) * MM, dir, Finish.Dark, on);
         }
+
+        // ------------------------------------------------------------------ FESS instruments
+
+        /// <summary>Knurled round handle along -Z from <paramref name="z0"/> (shared by the probe and the knife).</summary>
+        static void RoundHandle(Model m, Action<GameObject, Finish> on, string key, float y, float z0, float len)
+        {
+            var h = Get(key, () =>
+            {
+                var z = new List<float>(); var rr = new List<float>();
+                z.Add(z0); rr.Add(1.4f); z.Add(z0 - 4f); rr.Add(3f);
+                for (int i = 0; i * 4f < len - 10f; i++) { z.Add(z0 - 6f - 4f * i); rr.Add(i % 2 == 0 ? 3.4f : 3.1f); }
+                z.Add(z0 - len + 2f); rr.Add(3.0f); z.Add(z0 - len); rr.Add(1.2f);
+                return Lathe(z.ToArray(), rr.ToArray(), 10);
+            });
+            Add("Handle", h, m.root, new Vector3(0, y, 0) * MM, Quaternion.identity, Finish.Handle, on);
+        }
+
+        /// <summary>Sickle knife: a pointed, crescent blade (concave cutting edge up) on a slim shaft - uncinectomy.</summary>
+        static void Sickle(Model m, Action<GameObject, Finish> on)
+        {
+            m.length = 190f * MM; m.grip = 120f * MM;
+            var blade = Get("SickleBlade", () => Ribbon(new[] {
+                new Vector3(0, -3.6f, -12f), new Vector3(0, -3.8f, -8.5f), new Vector3(0, -3.3f, -5.5f), new Vector3(0, -2.2f, -3f),
+                new Vector3(0, -1f, -1.2f), new Vector3(0, 0, 0) },
+                new[] { 0.45f, 0.4f, 0.35f, 0.3f, 0.2f, 0.05f }, new[] { 0.9f, 1.15f, 1.15f, 0.95f, 0.6f, 0.08f }, 10));
+            Add("Blade", blade, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            var shaft = Get("SickleShaft", () => Lathe(new[] { -11.5f, -20f, -95f, -110f }, new[] { 0.6f, 0.9f, 1.1f, 1.4f }, 12));
+            Add("Shaft", shaft, m.root, new Vector3(0, -3.6f, 0) * MM, Quaternion.identity, Finish.Steel, on);
+            RoundHandle(m, on, "SickleHandle", -3.6f, -110f, 80f);
+        }
+
+        /// <summary>Ball-tip probe (sinus seeker): malleable wire bent up ~100 deg, 1.2 mm ball - finds ostia behind the uncinate.</summary>
+        static void BallProbe(Model m, Action<GameObject, Finish> on)
+        {
+            m.length = 185f * MM; m.grip = 125f * MM;
+            var path = new List<Vector3> { new Vector3(0, 0, 0), new Vector3(0, -3f, -0.6f), new Vector3(0, -6f, -1.6f) };
+            for (int i = 1; i <= 6; i++)   // bend back into the shaft line (radius 5 mm)
+            {
+                float a = Mathf.PI * 0.5f * i / 6f;
+                path.Add(new Vector3(0, -6f - 5f * Mathf.Sin(a), -1.6f - 5f * (1 - Mathf.Cos(a))));
+            }
+            path.Add(new Vector3(0, -11f, -20f)); path.Add(new Vector3(0, -11f, -105f));
+            var r = new float[path.Count];
+            for (int i = 0; i < r.Length; i++) r[i] = i < path.Count - 2 ? 0.45f : 0.7f;
+            var wire = Get("ProbeWire", () => Sweep(path.ToArray(), r, 10));
+            Add("Wire", wire, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            var ball = Get("ProbeBall", () => Lathe(new[] { 0.6f, 0.45f, 0f, -0.45f, -0.6f }, new[] { 0f, 0.4f, 0.6f, 0.4f, 0f }, 12));
+            Add("Ball", ball, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            RoundHandle(m, on, "ProbeHandle", -11f, -105f, 75f);
+        }
+
+        /// <summary>Two cups on a hinge at <paramref name="hinge"/>, opening about local X; the head turned up by <paramref name="upDeg"/>.</summary>
+        static void Cups(Model m, Action<GameObject, Finish> on, Vector3 hinge, float upDeg, float len, float width, float height, bool window)
+        {
+            var head = new GameObject("Head").transform;
+            head.SetParent(m.root, false);
+            head.localPosition = hinge * MM;
+            head.localRotation = Quaternion.Euler(-upDeg, 0, 0);
+            var cup = Get($"Cup{len}_{width}_{height}", () => Cup(len, width, height));
+            var win = Get("CupWindow", () => Lathe(new[] { 0f, -0.6f, -4.2f, -4.8f }, new[] { 0f, 0.7f, 0.7f, 0f }, 10, 1f, 0.35f));
+            m.jawUpper = new GameObject("JawUpper").transform;
+            m.jawLower = new GameObject("JawLower").transform;
+            foreach (var j in new[] { m.jawUpper, m.jawLower })
+            {
+                bool up = j == m.jawUpper;
+                j.SetParent(head, false);
+                var rot = up ? Quaternion.identity : Quaternion.Euler(0, 0, 180);
+                Add("Cup", cup, j, new Vector3(0, 0, len) * MM, rot, Finish.Steel, on);
+                if (window) Add("Window", win, j, new Vector3(0, (up ? 1.12f : -1.12f), len - 2.6f) * MM, Quaternion.identity, Finish.Dark, on);
+            }
+            var hingeBox = Get("CupHinge", () => Lathe(new[] { 1.5f, 0.5f, -2.5f, -4.5f }, new[] { 1.4f, 1.9f, 1.9f, 1.6f }, 16, 1.1f, 0.9f));
+            Add("Hinge", hingeBox, head, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+        }
+
+        /// <summary>Ring handle below the shaft line (scope stays clear), as on Blakesley-type forceps; shaft ends at z = -116 mm.</summary>
+        static void RingHandle(Model m, Action<GameObject, Finish> on, float y)
+        {
+            var fixedShank = Get("ShankFixed", () => Sweep(new[] {
+                new Vector3(0, 0, -116), new Vector3(0, -3, -124), new Vector3(0, -14, -138), new Vector3(0, -30, -152), new Vector3(0, -40, -160) },
+                new[] { 2.4f, 2.4f, 2.2f, 2.1f, 2.0f }, 12));
+            var o = new Vector3(0, y, 0) * MM;
+            Add("ShankFixed", fixedShank, m.root, o, Quaternion.identity, Finish.Steel, on);
+            var moving = Get("ShankMoving", () => Sweep(new[] {
+                new Vector3(0, 1.5f, -116), new Vector3(0, 1.5f, -128), new Vector3(0, -2, -146), new Vector3(0, -8, -164), new Vector3(0, -10, -170) },
+                new[] { 1.9f, 1.9f, 1.9f, 1.8f, 1.8f }, 12));
+            Add("ShankMoving", moving, m.root, o, Quaternion.identity, Finish.Steel, on);
+            var ring = Get("ForcepsRing", () => Torus(9.5f, 1.9f, 28, 10));
+            Add("FingerRing", ring, m.root, o + new Vector3(0, -48f, -167f) * MM, Quaternion.identity, Finish.Steel, on);
+            Add("ThumbRing", ring, m.root, o + new Vector3(0, -12f, -180f) * MM, Quaternion.identity, Finish.Steel, on);
+            var spur = Get("ForcepsSpur", () => Sweep(new[] { new Vector3(0, -57, -165), new Vector3(0, -66, -160), new Vector3(0, -72, -150) }, new[] { 1.8f, 1.6f, 1.2f }, 10));
+            Add("Spur", spur, m.root, o, Quaternion.identity, Finish.Steel, on);
+        }
+
+        /// <summary>Blakesley (Weil) forceps, straight or 45 deg up-biting: serrated cups for ethmoid cells, bulla, lamellae.</summary>
+        static void Blakesley(Model m, Action<GameObject, Finish> on, float upDeg)
+        {
+            m.length = 200f * MM; m.grip = 150f * MM;
+            const float len = 8.5f;
+            // Tip at the origin: the hinge sits len back along the (tilted) jaw axis.
+            var dir = Quaternion.Euler(-upDeg, 0, 0) * Vector3.forward;
+            var hinge = -dir * len;
+            Cups(m, on, hinge, upDeg, len, 3.6f, 1.35f, false);
+            var shaft = Get("BlakesleyShaft", () => Lathe(new[] { 0f, -40f, -100f, -116f }, new[] { 1.7f, 1.8f, 2.1f, 2.6f }, 18));
+            Add("Shaft", shaft, m.root, new Vector3(0, hinge.y, hinge.z - 4f) * MM, Quaternion.identity, Finish.Steel, on);
+            RingHandle(m, on, hinge.y);
+            m.SetJaw(1f);
+        }
+
+        /// <summary>Through-cutting forceps (septoplasty): fenestrated cups.</summary>
+        static void Forceps(Model m, Action<GameObject, Finish> on)
+        {
+            m.length = 200f * MM; m.grip = 150f * MM;
+            Cups(m, on, new Vector3(0, 0, -9.5f), 0f, 9f, 3.3f, 1.25f, true);
+            var shaft = Get("ForcepsShaft", () => Lathe(new[] { -14f, -60f, -112f, -116f }, new[] { 1.6f, 1.75f, 2.1f, 2.6f }, 18));
+            Add("Shaft", shaft, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            RingHandle(m, on, 0f);
+            m.SetJaw(1f);
+        }
+
+        /// <summary>Backbiter (antrum punch): a slim box head whose hooked blade bites backward - anterior antrostomy, uncinate.</summary>
+        static void Backbiter(Model m, Action<GameObject, Finish> on)
+        {
+            m.length = 200f * MM; m.grip = 150f * MM;
+            var head = Get("BackbiterHead", () => Lathe(new[] { 0.8f, 0f, -1.5f, -9.5f, -11f }, new[] { 0f, 1.3f, 1.9f, 1.9f, 1.7f }, 16, 1f, 1.15f));
+            Add("Head", head, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            var notch = Get("BackbiterNotch", () => Box(new Vector3(2.4f, 1.2f, 5.5f)));
+            Add("Notch", notch, m.root, new Vector3(0, 1.75f, -5f) * MM, Quaternion.identity, Finish.Dark, on);
+            // The blade: hinged at the front of the notch, swings up (open) and back down into the notch (bite).
+            m.jawUpper = new GameObject("Blade").transform;
+            m.jawUpper.SetParent(m.root, false);
+            m.jawUpper.localPosition = new Vector3(0, 1.6f, -2.2f) * MM;
+            var hook = Get("BackbiterHook", () => Ribbon(new[] { new Vector3(0, 0, 0), new Vector3(0, 0.4f, -2f), new Vector3(0, 0.2f, -4.2f), new Vector3(0, -0.5f, -5.2f) },
+                                                         new[] { 0.9f, 0.9f, 0.8f, 0.6f }, new[] { 0.6f, 0.7f, 0.7f, 0.5f }, 10));
+            Add("Hook", hook, m.jawUpper, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            m.jawUpperDeg = -40f; m.jawLowerDeg = 0f;   // opens by swinging the hook up and forward
+            var shaft = Get("BackbiterShaft", () => Lathe(new[] { -10.5f, -60f, -112f, -116f }, new[] { 1.7f, 1.85f, 2.1f, 2.6f }, 18));
+            Add("Shaft", shaft, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            RingHandle(m, on, 0f);
+            m.SetJaw(1f);
+        }
+
+        /// <summary>Microdebrider: 4 mm blade with a side window (inner blade turns while running) on a cabled handpiece.</summary>
+        static void Microdebrider(Model m, Action<GameObject, Finish> on)
+        {
+            m.length = 240f * MM; m.grip = 165f * MM;
+            var outer = Get("DebriderOuter", () => Lathe(new[] { 0.6f, 0f, -0.8f, -105f, -110f }, new[] { 0f, 1.4f, 1.95f, 2.05f, 3.2f }, 18));
+            Add("Outer", outer, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            var window = Get("DebriderWindow", () => Box(new Vector3(2.2f, 0.8f, 3.8f)));
+            Add("Window", window, m.root, new Vector3(0, 1.75f, -2.6f) * MM, Quaternion.identity, Finish.Dark, on);
+            m.spinner = new GameObject("InnerBlade").transform;
+            m.spinner.SetParent(m.root, false);
+            m.spinner.localPosition = new Vector3(0, 0, -2.6f) * MM;
+            var teeth = Get("DebriderTeeth", () => Box(new Vector3(0.6f, 2.9f, 3.2f)));
+            Add("Teeth", teeth, m.spinner, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            var hub = Get("DebriderHub", () => Lathe(new[] { -110f, -118f, -126f }, new[] { 3.2f, 5.5f, 6.5f }, 20));
+            Add("Hub", hub, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            var body = Get("DebriderBody", () => Lathe(new[] { -126f, -130f, -200f, -215f, -222f }, new[] { 6.5f, 8.5f, 9f, 7f, 4.5f }, 24));
+            Add("Handpiece", body, m.root, Vector3.zero, Quaternion.identity, Finish.Handle, on);
+            var port = Get("DebriderPort", () => Lathe(new[] { 0f, -14f }, new[] { 2.2f, 2.2f }, 12));
+            Add("SuctionPort", port, m.root, new Vector3(0, -9f, -150f) * MM, Quaternion.Euler(-35, 0, 0), Finish.Steel, on);
+            var cable = Get("DebriderCable", () => Sweep(new[] { new Vector3(0, 0, -222), new Vector3(0, -6, -250), new Vector3(0, -30, -285), new Vector3(0, -70, -305) },
+                                                        new[] { 3f, 3f, 3f, 3f }, 12));
+            Add("Cable", cable, m.root, Vector3.zero, Quaternion.identity, Finish.Dark, on);
+        }
+
+        /// <summary>Curved suction (maxillary / frontal): thin cannula whose last 12 mm bend up ~70 deg, on the Frazier grip.</summary>
+        static void CurvedSuction(Model m, Action<GameObject, Finish> on)
+        {
+            m.length = 200f * MM; m.grip = 140f * MM;
+            var path = new List<Vector3>();
+            // From the tip (pointing up and forward) back round the bend into the straight cannula.
+            path.Add(Vector3.zero); path.Add(new Vector3(0, -3.5f, -1.3f));
+            for (int i = 1; i <= 8; i++)
+            {
+                float a = 70f * Mathf.Deg2Rad * i / 8f;   // radius 8 mm
+                path.Add(new Vector3(0, -3.5f - 8f * Mathf.Sin(Mathf.Deg2Rad * 70f) + 8f * Mathf.Sin(Mathf.Deg2Rad * 70f - a),
+                                     -1.3f - 8f * (Mathf.Cos(Mathf.Deg2Rad * 70f - a) - Mathf.Cos(Mathf.Deg2Rad * 70f))));
+            }
+            var last = path[path.Count - 1];
+            path.Add(new Vector3(0, last.y, -95f));
+            var r = new float[path.Count];
+            for (int i = 0; i < r.Length; i++) r[i] = 1.25f;
+            var tube = Get("CurvedSuctionTube", () => Sweep(path.ToArray(), r, 12));
+            Add("Cannula", tube, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            var lumen = Get("CurvedSuctionLumen", () => Lathe(new[] { 0.05f, 0f, -2f }, new[] { 0f, 0.9f, 0.9f }, 12));
+            var tipDir = (path[0] - path[1]).normalized;
+            Add("Lumen", lumen, m.root, Vector3.zero, Quaternion.FromToRotation(Vector3.forward, tipDir), Finish.Dark, on);
+            var grip = Get("FrazierGrip", () => Lathe(new[] { 0f, -4f, -10f, -60f, -66f, -70f, -73f, -76f, -79f, -82f },
+                                                     new[] { 1.65f, 3.2f, 4.4f, 4.6f, 3.4f, 2.6f, 3.2f, 2.6f, 3.2f, 2.4f }, 18, 1f, 0.85f));
+            var dir = Quaternion.Euler(-30, 0, 0);
+            Add("Grip", grip, m.root, new Vector3(0, last.y, -95f) * MM, dir, Finish.Handle, on);
+            var port = Get("FrazierPort", () => Lathe(new[] { 0f, -1.5f, -7f, -8f }, new[] { 0f, 1.6f, 0.9f, 0f }, 12, 1f, 0.4f));
+            Add("ThumbPort", port, m.root, new Vector3(0, last.y, -95f) * MM + dir * new Vector3(0, 3.95f, -16f) * MM, dir, Finish.Dark, on);
+        }
+
+        /// <summary>A flat blade along a path in the YZ plane: thin across X (<paramref name="thick"/>), <paramref name="half"/> wide in the plane.</summary>
+        static Mesh Ribbon(Vector3[] path, float[] thick, float[] half, int seg) => Sweep(path, thick, seg, half, Vector3.right);
 
         // ------------------------------------------------------------------ shapes (mm)
 
@@ -304,21 +507,22 @@ namespace SeptoMentor
         }
 
         /// <summary>Tube along a polyline (mm) with rotation-minimising frames, closed at both ends.</summary>
-        static Mesh Sweep(Vector3[] path, float[] radius, int seg)
+        static Mesh Sweep(Vector3[] path, float[] radius, int seg, float[] radius2 = null, Vector3? fixedNormal = null)
         {
             var v = new List<Vector3>(); var t = new List<int>();
             Vector3 prevN = Vector3.zero;
             for (int i = 0; i < path.Length; i++)
             {
                 var tan = (path[Mathf.Min(i + 1, path.Length - 1)] - path[Mathf.Max(i - 1, 0)]).normalized;
-                var n = i == 0 ? Vector3.Cross(tan, Mathf.Abs(tan.x) < 0.9f ? Vector3.right : Vector3.up).normalized
-                               : Vector3.ProjectOnPlane(prevN, tan).normalized;
+                var n = fixedNormal.HasValue ? Vector3.ProjectOnPlane(fixedNormal.Value, tan).normalized
+                      : i == 0 ? Vector3.Cross(tan, Mathf.Abs(tan.x) < 0.9f ? Vector3.right : Vector3.up).normalized
+                      : Vector3.ProjectOnPlane(prevN, tan).normalized;
                 prevN = n;
                 var bn = Vector3.Cross(tan, n);
                 for (int k = 0; k < seg; k++)
                 {
                     float a = 2 * Mathf.PI * k / seg;
-                    v.Add((path[i] + (n * Mathf.Cos(a) + bn * Mathf.Sin(a)) * radius[i]) * MM);
+                    v.Add((path[i] + n * Mathf.Cos(a) * radius[i] + bn * Mathf.Sin(a) * (radius2 != null ? radius2[i] : radius[i])) * MM);
                 }
             }
             for (int i = 0; i + 1 < path.Length; i++)

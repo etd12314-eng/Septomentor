@@ -8,12 +8,24 @@ namespace SeptoMentor
     /// Resources/Voice/&lt;key&gt;.wav, so they work on the headset without a TTS engine or network.
     /// Warnings cut in over anything less urgent; the rest queue (at most three). The same key is not repeated
     /// within a few seconds. A key without a clip falls back to SpeechIO (Android TTS, if the headset has one).
+    /// How much is spoken unasked depends on <see cref="verbosity"/> (the monitor always shows everything):
+    ///   Quiet  - warnings and answers to the resident's own commands only;
+    ///   Normal - also step completions / found ostia, and cautions at most every 30 s each; tips stay on the screen;
+    ///   Full   - everything, as before.
+    /// Unasked lines (other than warnings) also keep a gap of a few seconds between them.
     /// </summary>
     public class VoiceCoach : MonoBehaviour
     {
+        public enum Verbosity { Quiet, Normal, Full }
+
         public SpeechIO speech;
         public bool muted;
+        public Verbosity verbosity = Verbosity.Normal;
         [Range(0, 1)] public float volume = 1f;
+        [Tooltip("Normal: least seconds between two spoken cautions with the same key.")]
+        public float cautionCooldown = 30f;
+        [Tooltip("Least seconds between two unasked lines (warnings excepted).")]
+        public float unaskedGap = 6f;
 
         /// <summary>True while a clip plays (and shortly after): the command recognizer ignores the microphone then.</summary>
         public bool Speaking => _source != null && _source.isPlaying || Time.unscaledTime < _quietUntil;
@@ -38,13 +50,24 @@ namespace SeptoMentor
             _beep = Tone(1200f, 0.07f);
         }
 
-        /// <summary>Speaks the clip for <paramref name="key"/>; <paramref name="text"/> is the fallback for TTS.</summary>
-        public void Say(string key, string text, Severity sev = Severity.Info)
+        float _lastUnasked = -100f;
+
+        /// <summary>An answer to the resident's own command (always spoken unless muted).</summary>
+        public void Reply(string key, string text = null) => Say(key, text, Severity.Info, true);
+
+        /// <summary>
+        /// Speaks the clip for <paramref name="key"/>; <paramref name="text"/> is the fallback for TTS. Unasked lines are
+        /// filtered by <see cref="verbosity"/>; <paramref name="asked"/> ones (answers, briefs the resident asked for) are not.
+        /// </summary>
+        public void Say(string key, string text, Severity sev = Severity.Info, bool asked = false)
         {
             if (muted && key != "voice_off" && key != "voice_on") return;
             key = Normalize(key);
-            if (_lastSaid.TryGetValue(key, out float t) && Time.unscaledTime - t < (sev >= Severity.Warning ? 2.5f : 5f)) return;
-            _lastSaid[key] = Time.unscaledTime;
+            float now = Time.unscaledTime;
+            if (!asked && !Wanted(key, sev, now)) return;
+            if (_lastSaid.TryGetValue(key, out float t) && now - t < (sev >= Severity.Warning ? 2.5f : 5f)) return;
+            _lastSaid[key] = now;
+            if (!asked && sev < Severity.Warning) _lastUnasked = now;
             var line = new Line { key = key, text = text, sev = sev };
             if (sev >= Severity.Warning && _source.isPlaying && _playing < Severity.Warning)
             {
@@ -55,17 +78,32 @@ namespace SeptoMentor
             _queue.Enqueue(line);
         }
 
-        /// <summary>Several clips in a row (e.g. the phase, then the progress).</summary>
+        /// <summary>Whether an unasked line is spoken at the current verbosity.</summary>
+        bool Wanted(string key, Severity sev, float now)
+        {
+            if (sev >= Severity.Warning) return true;
+            if (verbosity == Verbosity.Quiet) return false;
+            bool gap = now - _lastUnasked >= unaskedGap;
+            if (verbosity == Verbosity.Full) return gap;
+            // Normal: one-off events (a step finished, an ostium found) and rare cautions.
+            bool evt = key.StartsWith("done_") || key.StartsWith("found_") || key == "fess_done" || key.StartsWith("proc_");
+            if (evt) return true;
+            if (sev == Severity.Caution)
+                return gap && (!_lastSaid.TryGetValue(key, out float t) || now - t >= cautionCooldown);
+            return false;
+        }
+
+        /// <summary>Several clips in a row (e.g. the phase, then the progress) - always asked for.</summary>
         public void SayAll(params string[] keys)
         {
-            foreach (var k in keys) { _lastSaid.Remove(k); Say(k, null); }
+            foreach (var k in keys) { _lastSaid.Remove(k); Say(k, null, Severity.Info, true); }
         }
 
         public void Repeat()
         {
             if (_last == null) return;
             _lastSaid.Remove(_last.Value.key);
-            Say(_last.Value.key, _last.Value.text, _last.Value.sev);
+            Say(_last.Value.key, _last.Value.text, _last.Value.sev, true);
         }
 
         /// <summary>Short tone: a voice command was heard.</summary>

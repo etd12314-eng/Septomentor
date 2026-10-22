@@ -37,8 +37,10 @@ namespace SeptoMentor
         public float nearPixels = 8f;
         public float torqueDegPerSec = 90f;
         public int minTearPixels = 30;
-        public int persistFrames = 4;
-        public float cooldownSeconds = 8f;
+        public int persistFrames = 6;
+        public float cooldownSeconds = 20f;
+        [Tooltip("Septoplasty rules (turbinate proximity, plane, L-strut, perpendicular plate). Off during FESS.")]
+        public bool septoplastyRules = true;
 
         public SurgicalPhase Phase { get; private set; } = SurgicalPhase.Setup;
         public SegmentationFrame LastFrame { get; private set; }
@@ -97,6 +99,8 @@ namespace SeptoMentor
             Check("mucosal_tear", f.stats[(int)Structure.MucosalTear].pixelCount >= minTearPixels, Severity.Warning,
                 "Mucosal tear visible. Note its site; avoid a tear in the opposite flap at the same level (perforation risk).");
 
+            if (!septoplastyRules) { ResetStreaks(); return; }
+
             // 2) Turbinate protection.
             if (hasTip)
             {
@@ -147,7 +151,12 @@ namespace SeptoMentor
                         "At the perpendicular plate: cut, don't twist (skull-base risk).", cooldownOverride: 30f);
             }
 
-            // Reset streaks for rules that were not true this frame.
+            ResetStreaks();
+        }
+
+        /// <summary>Resets the streaks of rules that were not true this frame.</summary>
+        void ResetStreaks()
+        {
             var keys = new List<string>(_streak.Keys);
             foreach (var k in keys) if (!_seenThisFrame.Contains(k)) _streak[k] = 0;
         }

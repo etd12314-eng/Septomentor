@@ -51,8 +51,8 @@ side_left	Sol burun boşluğu, ameliyat tarafı.
 side_right	Sağ burun boşluğu, karşı taraf.
 contra_side	Burası sağ burun boşluğu. Septoplasti sol taraftan yapılıyor, burada yalnızca inceleme yapın.
 tool_Scalpel	Bistüri. İnsizyon hattı boyunca kıkırdağa kadar çekin.
-tool_FreerElevator	Kaldırıcı. İnsizyondan girip kıkırdak üzerinde süpürün.
-tool_ScissorsForceps	Kesici makas. Tetikle ısırın.
+tool_Freer	Kaldırıcı. İnsizyondan girip kıkırdak üzerinde süpürün.
+tool_ThroughCut	Kesici makas. Tetikle ısırın.
 tool_Suction	Aspiratör. Tetikle kanamayı temizleyin.
 tool_none	Alet masaya bırakıldı.
 cmd_unknown	Anlaşılmadı, tekrar söyleyin.
@@ -66,4 +66,57 @@ scope_auto	Endoskop otomatik pilotta.
 restart	Baştan başlıyoruz.
 no_ai	Yapay zeka mentoru bu sürümde kapalı.
 voice_ready	Sesli komutlar hazır. Komutları duymak için yardım deyin.
-help	Komutlar: sonraki adım, önceki adım, baştan başla. Neşter ver, kaldırıcı ver, makas ver, emme ver, aleti bırak. Etiket aç, etiket kapat, merkeze al. Durum, ne yapmalıyım, tekrar. Sesi kapat, sesi aç. Kamera elde, kamera otomatik.
+help	Komutlar: sonraki adım, önceki adım, baştan başla. Neşter ver, kaldırıcı ver, makas ver, emme ver, aleti bırak. Etiket aç, etiket kapat, merkeze al. Durum, ne yapmalıyım, tekrar. Sesi kapat, sesi aç. Kamera elde, kamera otomatik. İkinci ameliyat derseniz sinüs cerrahisine geçerim. Az konuş, normal konuş ya da çok konuş diyerek ne kadar konuşacağımı seçebilirsiniz.
+
+# --- FESS (endoscopic sinus surgery) ---
+proc_fess	Endoskopik sinüs cerrahisi.
+proc_septo	Septoplasti.
+help_fess	Sinüs cerrahisi. Önce ostiumları bulun: sondayla dokunun ya da endoskopu yakından üzerinde tutun. Sonra unsinektomi, antrostomi, etmoidektomi ve sfenoidotomi. Aletler için eğri bıçak, sonda, düz pens, yukarı pens, ters pens, tıraş ve eğri emme deyin.
+scope_0	Sıfır derece endoskop.
+scope_30	Otuz derece endoskop.
+scope_70	Yetmiş derece endoskop.
+talk_quiet	Sadece uyarıları söyleyeceğim.
+talk_normal	Normal konuşma.
+talk_full	Her şeyi söyleyeceğim.
+tool_SickleKnife	Orak bıçak. Unsinatı yapışma hattından kesin.
+tool_BallProbe	Top uçlu sonda. Ostiumları arayın.
+tool_Blakesley	Düz Blakesley pensi.
+tool_BlakesleyUp	Yukarı açılı Blakesley pensi.
+tool_Backbiter	Geri ısıran pens.
+tool_Microdebrider	Mikrodebrider. Tetikle çalıştırın.
+tool_CurvedSuction	Eğri aspiratör.
+fess_find	Ostiumları bulun: unsinatın arkasında maksiller, etmoid bulla, üst konkanın medialinde sfenoid ve frontal reseste frontal ostium.
+fess_unc	Unsinektomi. Orak bıçakla unsinatı kesin, sonra geri ısıran pens ya da Blakesley ile alın.
+fess_antro	Maksiller antrostomi. Doğal ostiumu geriye ve aşağıya doğru genişletin, öne değil.
+fess_ant_eth	Ön etmoidektomi. Bullayı açın, yukarı açılı pensle agger nasiyi alıp frontal resesi temizleyin.
+fess_post_eth	Arka etmoidektomi. Bazal lamelden geçin. Kafa tabanının altında, orbitanın medialinde kalın.
+fess_sphen	Sfenoidotomi. Sfenoid ostiumu mediale ve aşağıya doğru genişletin, asla laterale değil.
+fess_done	Sinüs cerrahisi tamamlandı. Kanama kontrolü yapın ve orta konkanın yerini kontrol edin.
+fess_step_FindOstia	Ostiumları bulma.
+fess_step_Uncinectomy	Unsinektomi.
+fess_step_Antrostomy	Maksiller antrostomi.
+fess_step_AnteriorEthmoid	Ön etmoidektomi.
+fess_step_PosteriorEthmoid	Arka etmoidektomi.
+fess_step_Sphenoidotomy	Sfenoidotomi.
+fess_step_Done	Tamamlandı.
+found_maxillary	Maksiller sinüs ostiumu bulundu.
+found_ethmoid	Etmoid bulla ostiumu bulundu.
+found_sphenoid	Sfenoid sinüs ostiumu bulundu.
+found_frontal	Frontal reses ve ostium bulundu.
+left_maxillary	Maksiller ostium.
+left_ethmoid	Etmoid bulla ostiumu.
+left_sphenoid	Sfenoid ostium.
+left_frontal	Frontal ostium.
+left_none	Tüm ostiumlar bulundu.
+unc_incised	Unsinat kesildi. Şimdi geri ısıran pens ya da Blakesley ile alın.
+done_unc	Unsinektomi tamam. İnfundibulum ve maksiller ostium göründü.
+done_antro	Antrostomi tamam. Açılı endoskopla maksiller sinüse bakın.
+done_ant_eth	Ön etmoid açıldı, frontal reses temiz.
+done_post_eth	Arka etmoid hücreleri açıldı.
+orbit	Dikkat! Lamina papirasea. Orbita hemen lateralde, medialde kalın.
+skull_base	Dikkat! Kafa tabanı. Etmoid tavanın altında kalın, beyin omurilik sıvısı kaçağı riski.
+ethmoid_artery	Dikkat! Ön etmoidal arter. Burayı ısırmayın.
+sphenoid_lateral	Dikkat! Sfenoidin lateral duvarı. Karotis arter ve optik sinir. Sadece mediale ve aşağıya açın.
+nld	Dikkat! Nazolakrimal kanal önde. Antrostomiyi öne uzatmayın.
+mt_bite	Bu orta konka. Koruyun, lateralinden ısırın.
+mt_press	Orta konkaya nazik olun, kırılıp lateralize olabilir.

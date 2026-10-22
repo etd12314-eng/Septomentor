@@ -6,11 +6,12 @@ namespace SeptoMentor
 {
     /// <summary>
     /// The resident's RIGHT hand works the instruments (the left holds the endoscope).
-    /// Scalpel, Freer elevator, through-cutting forceps and Frazier suction lie on the Mayo stand:
+    /// The procedure's tray lies on the Mayo stand (septoplasty: scalpel, Freer, through-cutting forceps, Frazier suction;
+    /// FESS: sickle knife, ball probe, Freer, Blakesley straight and 45 up, backbiter, microdebrider, curved suction):
     /// reach over one and press the grip to take it, press the grip again to hand it back
-    /// (B swaps to the next one without reaching). The trigger closes the forceps jaws (bite) and runs the suction.
-    /// The instrument in the hand is mirrored into the anatomy (VirtualInstrument), so it appears in the
-    /// endoscope image exactly where it is in the patient's nose, and SeptoplastySim makes the tissue respond.
+    /// (B swaps to the next one without reaching). The trigger closes the forceps jaws (bite), runs the suction and
+    /// the microdebrider. The instrument in the hand is mirrored into the anatomy (VirtualInstrument), so it appears in
+    /// the endoscope image exactly where it is in the patient's nose, and SeptoplastySim / FessSim make the tissue respond.
     /// </summary>
     [DefaultExecutionOrder(-90)]   // after the scope, before the provider renders
     public class HandInstruments : MonoBehaviour
@@ -18,6 +19,7 @@ namespace SeptoMentor
         public SyntheticSegmentationProvider provider;
         public OperatingRoom room;
         public SeptoplastySim sim;
+        public FessSim fess;
         public Transform head;
         public XRNode hand = XRNode.RightHand;
         public float grabRadius = 0.12f;
@@ -27,12 +29,16 @@ namespace SeptoMentor
         /// <summary>(voice key, message, severity) for the monitor / voice.</summary>
         public event Action<string, string, Severity> Hint;
 
-        public static readonly Structure[] Tools = { Structure.Scalpel, Structure.FreerElevator, Structure.ScissorsForceps, Structure.Suction };
+        public static readonly Tool[] SeptoplastyTray = { Tool.Scalpel, Tool.Freer, Tool.ThroughCut, Tool.Suction };
+        public static readonly Tool[] FessTray =
+            { Tool.SickleKnife, Tool.BallProbe, Tool.Freer, Tool.Blakesley, Tool.BlakesleyUp, Tool.Backbiter, Tool.Microdebrider, Tool.CurvedSuction };
 
+        public Procedure Procedure { get; private set; } = Procedure.Septoplasty;
+        public Tool[] Tools { get; private set; } = SeptoplastyTray;
         public bool Active { get; private set; }
-        public Structure Held => _held >= 0 ? Tools[_held] : Structure.Background;
+        public Tool Held => _held >= 0 ? Tools[_held] : Tool.None;
 
-        class Tool
+        class Slot
         {
             public InstrumentModels.Model model;
             public Pose rest;
@@ -41,39 +47,56 @@ namespace SeptoMentor
             public Pose from;
         }
 
-        Tool[] _tools;
+        Slot[] _tools;
         int _held = -1, _hover = -1;
         bool _grip, _trigger;
         float[] _dist;
+        Transform _trayRoot;
 
-        void Start()
+        void Start() => BuildTray();
+
+        /// <summary>Lays out the procedure's instruments on the Mayo stand (the one in the hand goes back first).</summary>
+        public void SetProcedure(Procedure p)
         {
+            if (p == Procedure && _tools != null) return;
+            Release();
+            Procedure = p;
+            Tools = p == Procedure.Fess ? FessTray : SeptoplastyTray;
+            BuildTray();
+        }
+
+        void BuildTray()
+        {
+            if (_trayRoot != null) Destroy(_trayRoot.gameObject);
+            _trayRoot = new GameObject("Tray").transform;
+            _trayRoot.SetParent(transform, false);
+            _held = _hover = -1;
+            _dist = null;
             var shader = room != null && room.surfaceShader != null ? room.surfaceShader : Shader.Find("SeptoMentor/ORSurface");
             var dark = Mat(shader, new Color(0.04f, 0.04f, 0.05f), 0.3f, 0f);
             var tray = OperatingRoom.MayoTray;
-            _tools = new Tool[Tools.Length];
-            var labels = new GameObject("TrayLabels").transform;
-            labels.SetParent(transform, false);
+            _tools = new Slot[Tools.Length];
+            float spacing = Mathf.Min(0.08f, 0.46f / Tools.Length);
             for (int i = 0; i < Tools.Length; i++)
             {
-                var t = _tools[i] = new Tool
+                var t = _tools[i] = new Slot
                 {
                     steel = Mat(shader, new Color(0.78f, 0.8f, 0.83f), 0.9f, 0.85f),
-                    handle = Mat(shader, Tools[i] == Structure.FreerElevator ? new Color(0.55f, 0.57f, 0.6f) : new Color(0.7f, 0.72f, 0.75f), 0.6f, 0.6f),
+                    handle = Mat(shader, Tools[i] == Tool.Freer || Tools[i] == Tool.Microdebrider ? new Color(0.55f, 0.57f, 0.6f) : new Color(0.7f, 0.72f, 0.75f), 0.6f, 0.6f),
                 };
                 // Laid out side by side on their sides, tips away from the surgeon, handles toward them.
-                t.rest = new Pose(tray + new Vector3(-0.2f + 0.08f * i, 0.006f, 0.1f), Quaternion.LookRotation(Vector3.forward, Vector3.left));
-                t.model = InstrumentModels.Build(Tools[i], transform, (go, f) =>
+                t.rest = new Pose(tray + new Vector3(-0.08f + (i - (Tools.Length - 1) * 0.5f) * spacing, 0.006f, 0.1f), Quaternion.LookRotation(Vector3.forward, Vector3.left));
+                t.model = InstrumentModels.Build(Tools[i], _trayRoot, (go, f) =>
                     go.GetComponent<Renderer>().sharedMaterial = f == InstrumentModels.Finish.Dark ? dark : f == InstrumentModels.Finish.Handle ? t.handle : t.steel);
                 t.model.root.SetPositionAndRotation(t.rest.position, t.rest.rotation);
 
                 var label = new GameObject("Label").transform;
-                label.SetParent(labels, false);
+                label.SetParent(_trayRoot, false);
                 label.position = t.rest.position + new Vector3(0, 0.002f, -0.24f);
                 label.rotation = Quaternion.Euler(60, 0, 0);
                 label.localScale = Vector3.one * 0.001f;
-                var l = new Label3D(label, "Name", 90);
-                l.SetBox(80, 30);
+                var l = new Label3D(label, "Name", Tools.Length > 5 ? 70 : 90);
+                l.SetBox(spacing * 1000f, 30);
                 l.Set(InstrumentModels.DisplayName(Tools[i]).Replace(" ", "\n"), new Color(0.9f, 0.95f, 1f));
             }
         }
@@ -87,8 +110,8 @@ namespace SeptoMentor
             return m;
         }
 
-        /// <summary>Voice command: take this instrument (handing back the one in the hand), or Background = hand it back.</summary>
-        public void Request(Structure s)
+        /// <summary>Voice command: take this instrument (handing back the one in the hand), or None = hand it back.</summary>
+        public void Request(Tool s)
         {
             int i = Array.IndexOf(Tools, s);
             if (i == _held) return;
@@ -97,7 +120,7 @@ namespace SeptoMentor
         }
 
         /// <summary>B button: hand back the current instrument and take the next one (none -> scalpel -> ... -> none).</summary>
-        public Structure Cycle()
+        public Tool Cycle()
         {
             int next = _held + 1;
             Release();
@@ -113,14 +136,22 @@ namespace SeptoMentor
             Hint?.Invoke("tool_" + Tools[i], InstrumentModels.DisplayName(Tools[i]) + Usage(Tools[i]), Severity.Info);
         }
 
-        static string Usage(Structure s)
+        string Usage(Tool s)
         {
             switch (s)
             {
-                case Structure.Scalpel: return ": draw it along the incision line, about 1 cm behind the caudal septal edge, down to the cartilage.";
-                case Structure.FreerElevator: return ": slide it under the flap through the incision and sweep it flat on the cartilage.";
-                case Structure.ScissorsForceps: return ": trigger = bite. Excise the spur, keep the L-strut.";
-                case Structure.Suction: return ": trigger = suction. Clear the blood; it also lays the flap back.";
+                case Tool.Scalpel: return ": draw it along the incision line, about 1 cm behind the caudal septal edge, down to the cartilage.";
+                case Tool.Freer: return Procedure == Procedure.Fess ? ": medialise the middle turbinate gently; palpate the uncinate."
+                                                                     : ": slide it under the flap through the incision and sweep it flat on the cartilage.";
+                case Tool.ThroughCut: return ": trigger = bite. Excise the spur, keep the L-strut.";
+                case Tool.Suction: return ": trigger = suction. Clear the blood; it also lays the flap back.";
+                case Tool.SickleKnife: return ": incise the uncinate along its attachment, point toward the lateral wall - not deeper.";
+                case Tool.BallProbe: return ": slide behind the uncinate and feel for the ostia (maxillary, bulla, sphenoid, frontal).";
+                case Tool.Blakesley: return ": trigger = bite. Uncinate remnants, bulla, ethmoid cells - stay medial to the orbit.";
+                case Tool.BlakesleyUp: return ": trigger = bite. Up-biting for the agger nasi and the frontal recess.";
+                case Tool.Backbiter: return ": trigger = bite backward. Takes the uncinate and widens the antrostomy forward.";
+                case Tool.Microdebrider: return ": trigger = run. Shaves soft tissue and thin bone; keep the window in view.";
+                case Tool.CurvedSuction: return ": trigger = suction. Reaches round into the maxillary sinus and the frontal recess.";
             }
             return "";
         }
@@ -174,19 +205,22 @@ namespace SeptoMentor
             var vi = provider.Instrument;
             var patient = provider.patient;
             vi.SetExternal(patient != null ? patient.transform : null);
-            if (_held < 0) { vi.Set(Structure.Background); return; }
+            if (_held < 0) { vi.Set(Tool.None); return; }
 
             var t = _tools[_held];
             var tip = wPos + wRot * new Vector3(0, 0, t.model.grip);   // the hand holds each instrument where a surgeon would
             t.model.root.SetPositionAndRotation(tip, wRot);
             t.model.SetJaw(1f - trig);
+            t.model.Spin(trigNow, Time.deltaTime);
 
             vi.Set(Held);
             vi.jawOpen = 1f - trig;
+            vi.running = trigNow;
             if (HandheldScope.ToAnatomy(room, patient, tip, wRot, out var local, out var localRot))
             {
                 vi.SetExternalPose(local, localRot);
-                if (sim != null) sim.Step(Held, local, trigNow, trigDown, hand);
+                if (Procedure == Procedure.Fess) { if (fess != null) fess.Tick(Held, local, localRot, trigNow, trigDown, hand); }
+                else if (sim != null) sim.Step(InstrumentModels.LabelOf(Held), local, trigNow, trigDown, hand);
             }
         }
 
@@ -216,7 +250,7 @@ namespace SeptoMentor
             if (_hover >= 0) { Glow(_tools[_hover], 0.35f); Haptics.Pulse(hand, 0.15f, 0.02f); }
         }
 
-        static void Glow(Tool t, float amount)
+        static void Glow(Slot t, float amount)
         {
             t.steel.SetFloat("_Emission", amount);
             t.handle.SetFloat("_Emission", amount);

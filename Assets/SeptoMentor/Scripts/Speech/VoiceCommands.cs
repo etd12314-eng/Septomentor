@@ -14,6 +14,8 @@ namespace SeptoMentor
     {
         Next, Previous, Restart, Scalpel, Elevator, Forceps, Suction, Release, LabelsOn, LabelsOff, Recenter,
         Status, Hint, Repeat, Mute, Unmute, ScopeHand, ScopeAuto, Ask, Help,
+        Sickle, Probe, BlakesleyStraight, BlakesleyUp, Backbiter, Shaver, CurvedSuction,   // FESS instruments
+        Septoplasty, Fess, Scope0, Scope30, Scope70, Quiet, NormalTalk, Verbose, Targets,
     }
 
     /// <summary>
@@ -22,7 +24,10 @@ namespace SeptoMentor
     /// grammar, so it only ever hears the command words. Always listening (both hands are busy with the scope and the
     /// instruments); the microphone is ignored while the trainer itself speaks.
     /// The small model knows everyday words only, so the commands use them: "neşter ver", "kaldırıcı ver", "makas ver",
-    /// "emme ver" for the instruments.
+    /// "emme ver" for the instruments; for sinus surgery "eğri bıçak" (sickle knife), "sonda" (ball probe), "düz / yukarı /
+    /// ters pens" (Blakesley straight / 45 up / backbiter), "tıraş" or "motor" (microdebrider), "eğri emme" (curved suction);
+    /// "birinci / ikinci ameliyat" (septoplasty / FESS), "sıfır / otuz / yetmiş derece" (scope angle), "az / normal / çok konuş"
+    /// (how much the trainer says), "hedefler" (the ostia still to find).
     /// </summary>
     public class VoiceCommands : MonoBehaviour
     {
@@ -48,7 +53,10 @@ namespace SeptoMentor
             "sonraki adım", "önceki adım", "baştan başla", "neşter ver", "bıçak ver", "kaldırıcı ver", "kürek ver",
             "makas ver", "pens ver", "emme ver", "kanamayı temizle", "aleti bırak", "etiket aç", "etiket kapat",
             "merkeze al", "durum nedir", "ne yapmalıyım", "ipucu", "tekrar", "sesi kapat", "sesi aç",
-            "kamera elde", "kamera otomatik", "soru sor", "yardım", "[unk]",
+            "kamera elde", "kamera otomatik", "soru sor", "yardım",
+            "eğri bıçak ver", "sonda ver", "düz pens ver", "yukarı pens ver", "ters pens ver", "tıraş ver", "motor ver",
+            "eğri emme ver", "birinci ameliyat", "ikinci ameliyat", "sıfır derece", "otuz derece", "yetmiş derece",
+            "az konuş", "normal konuş", "çok konuş", "hedefler", "[unk]",
         };
 
         readonly ConcurrentQueue<short[]> _audio = new ConcurrentQueue<short[]>();
@@ -174,7 +182,7 @@ namespace SeptoMentor
             PumpMicrophone();
             while (_heard.TryDequeue(out var text))
             {
-                if (text == "__ready__") { voice?.Say("voice_ready", null); continue; }
+                if (text == "__ready__") { voice?.Reply("voice_ready"); continue; }
                 text = text.Replace("[unk]", "").Trim();
                 if (text.Length == 0) continue;
                 var cmd = Match(text);
@@ -220,6 +228,16 @@ namespace SeptoMentor
         public static VoiceCommand? Match(string t)
         {
             bool Has(string w) => t.Contains(w);
+            if (Has("konuş")) return Has("az") ? VoiceCommand.Quiet : Has("çok") ? VoiceCommand.Verbose : VoiceCommand.NormalTalk;
+            if (Has("derece")) return Has("yetmiş") ? VoiceCommand.Scope70 : Has("otuz") ? VoiceCommand.Scope30 : VoiceCommand.Scope0;
+            if (Has("ameliyat")) return Has("ikinci") ? VoiceCommand.Fess : VoiceCommand.Septoplasty;
+            if (Has("hedef")) return VoiceCommand.Targets;
+            if (Has("eğri")) return Has("emme") ? VoiceCommand.CurvedSuction : VoiceCommand.Sickle;
+            if (Has("sonda")) return VoiceCommand.Probe;
+            if (Has("tıraş") || Has("motor")) return VoiceCommand.Shaver;
+            if (Has("pens") && Has("yukarı")) return VoiceCommand.BlakesleyUp;
+            if (Has("pens") && Has("ters")) return VoiceCommand.Backbiter;
+            if (Has("pens") && Has("düz")) return VoiceCommand.BlakesleyStraight;
             if (Has("sonraki")) return VoiceCommand.Next;
             if (Has("önceki")) return VoiceCommand.Previous;
             if (Has("baştan")) return VoiceCommand.Restart;

@@ -31,6 +31,8 @@ namespace SeptoMentor
 
         [Header("Hand-held (controller-driven) scope, in the patient's local space")]
         public bool externalPose;
+        [Tooltip("Endoscope viewing angle, degrees (0, 30, 45, 70): the view tilts toward the light post (up in the image).")]
+        public float viewAngle;
         public Vector3 externalPosition;
         public Quaternion externalRotation = Quaternion.identity;
 
@@ -136,6 +138,9 @@ namespace SeptoMentor
 
         void MoveScope()
         {
+            var tilt = Quaternion.Euler(-viewAngle, 0, 0);
+            _endoCam.transform.localRotation = tilt;
+            _labelCam.transform.localRotation = tilt;
             if (externalPose)
             {
                 _rig.localPosition = externalPosition;

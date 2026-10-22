@@ -5,13 +5,16 @@ using UnityEngine.XR;
 namespace SeptoMentor
 {
     /// <summary>
-    /// Main menu: A = XR navigation (passthrough, operating room), B = VR training simulator.
+    /// Main menu: A = XR navigation (passthrough, operating room), B = VR septoplasty trainer, X = VR sinus surgery (FESS).
     /// Also added to the other scenes: hold the left menu button for 1 s (or both grips for 2 s, where grips are free) to come back here.
     /// With hand tracking the two modes are big buttons to poke, and the hand menus' "home" button is held instead of the grips.
     /// </summary>
     public class ModeSwitch : MonoBehaviour
     {
         public const string LauncherScene = "Launcher", NavigationScene = "SeptoMentor_XR", TrainingScene = "SeptoMentor";
+
+        /// <summary>The procedure the VR trainer opens with (set by the launcher).</summary>
+        public static Procedure StartProcedure = Procedure.Septoplasty;
 
         [Tooltip("True only in the launcher scene: shows the menu and reacts to A / B.")]
         public bool isLauncher;
@@ -21,7 +24,7 @@ namespace SeptoMentor
 
         Label3D _title, _body;
         HandMenu _buttons;
-        bool _a, _b;
+        bool _a, _b, _x;
         float _gripsSince = -1;
 
         /// <summary>
@@ -44,17 +47,19 @@ namespace SeptoMentor
             _body.go.transform.localPosition = new Vector3(0, -4, 0);
             _body.SetBox(80, 20);
             _body.Set("A  -  XR Navigation (operating room, passthrough, patient CT)\n\n" +
-                      "B  -  VR Training simulator (virtual endoscope)\n\n" +
+                      "B  -  VR Training: septoplasty (virtual endoscope)\n\n" +
+                      "X  -  VR Training: endoscopic sinus surgery (FESS)\n\n" +
                       "Research prototype - not a medical device. Hold the menu button (left controller) for 1 s in any mode to return here.\n" +
                       "Hand tracking: poke a button below; later, turn your left palm toward you for the menu.",
                       new Color(0.85f, 0.9f, 1f));
             _buttons = new GameObject("HandButtons").AddComponent<HandMenu>();
             _buttons.anchor = HandMenu.Anchor.Fixed;
-            _buttons.columns = 2;
+            _buttons.columns = 3;
             _buttons.buttonSize = new Vector2(0.14f, 0.06f);
             _buttons.gap = 0.03f;
             _buttons.AddButton("xr", "XR Navigation");
-            _buttons.AddButton("vr", "VR Training");
+            _buttons.AddButton("vr", "VR Septoplasty");
+            _buttons.AddButton("fess", "VR Sinus (FESS)");
             Invoke(nameof(Place), 0.5f);
         }
 
@@ -76,9 +81,13 @@ namespace SeptoMentor
             var l = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
             if (isLauncher)
             {
-                bool xr = _buttons != null && _buttons.Pressed("xr"), vr = _buttons != null && _buttons.Pressed("vr");
+                bool xr = _buttons != null && _buttons.Pressed("xr"), vr = _buttons != null && _buttons.Pressed("vr"),
+                     fess = _buttons != null && _buttons.Pressed("fess");
                 if (Pressed(r, CommonUsages.primaryButton, ref _a) || KeyA() || xr) SceneManager.LoadScene(NavigationScene);
-                else if (Pressed(r, CommonUsages.secondaryButton, ref _b) || KeyB() || vr) SceneManager.LoadScene(TrainingScene);
+                else if (Pressed(r, CommonUsages.secondaryButton, ref _b) || KeyB() || vr)
+                { StartProcedure = Procedure.Septoplasty; SceneManager.LoadScene(TrainingScene); }
+                else if (Pressed(l, CommonUsages.primaryButton, ref _x) || fess)
+                { StartProcedure = Procedure.Fess; SceneManager.LoadScene(TrainingScene); }
                 return;
             }
             bool menu = Held(l, CommonUsages.menuButton);
