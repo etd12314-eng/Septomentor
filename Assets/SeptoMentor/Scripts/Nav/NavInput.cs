@@ -7,8 +7,8 @@ namespace SeptoMentor.Nav
     /// Touch controller state for the navigation mode, with press edges.
     /// Editor fallback keys: Space = trigger, Enter = A, Backspace = B, O = X, Q = Y,
     /// P = left trigger, C = right stick click, arrows = right stick.
-    /// Hand tracking (controllers put down): right index fingertip = pointer, left pinch = trigger,
-    /// left palm toward the face = button menu (poke with the right index finger) for everything else.
+    /// Hand tracking (controllers put down): right index fingertip = pointer (smoothed, see FingerPointer),
+    /// left pinch = trigger, open left palm toward the face = button menu (poke with the right index finger).
     /// </summary>
     public class NavInput
     {
@@ -16,11 +16,13 @@ namespace SeptoMentor.Nav
         public Vector2 LeftStick, RightStick;
         public int StickStepY;   // -1 / +1 on a right-stick flick
         public bool HandsActive;  // hand tracking in use instead of the controllers
+        public readonly FingerPointer finger = new FingerPointer();
 
         /// <summary>Left-palm poke menu; created by the owner, read here.</summary>
         public HandMenu menu;
 
         bool _t, _a, _b, _x, _y, _lt, _sc, _flick;
+        float _handsSeen = -10f;
         readonly Pinch _leftPinch = new Pinch(false);
 
         public static void AddMenuButtons(HandMenu m)
@@ -57,12 +59,15 @@ namespace SeptoMentor.Nav
                 if (ks != Vector2.zero) RightStick = ks;
             }
 #endif
-            HandsActive = HandTracking.AnyTracked;
+            finger.Update();
+            // Hands blink out for a few frames now and then; don't flip between hand and controller mode on that.
+            if (HandTracking.AnyTracked) _handsSeen = Time.time;
+            HandsActive = Time.time - _handsSeen < 0.5f;
             int handStep = 0;
             if (HandsActive)
             {
-                // The pinch is ignored while the menu is up, so poking a button can't also capture a point.
-                _leftPinch.Update(menu == null || !menu.Visible);
+                // The pinch is ignored while the right finger is at the menu, so poking a button can't also capture a point.
+                _leftPinch.Update(menu == null || !menu.FingerNear);
                 trig |= _leftPinch.Held;
                 if (menu != null)
                 {
@@ -105,16 +110,6 @@ namespace SeptoMentor.Nav
         }
 
         public static void HapticRight(float amp, float sec) => Haptic(InputDevices.GetDeviceAtXRNode(XRNode.RightHand), amp, sec);
-
-        /// <summary>Right index finger in tracking space: tip and the joint behind it (for the pointing direction).</summary>
-        public static bool RightIndex(out Vector3 tip, out Vector3 distal, out Quaternion rot)
-        {
-            tip = distal = default; rot = Quaternion.identity;
-            if (!HandTracking.TryGetJoint(true, UnityEngine.XR.Hands.XRHandJointID.IndexTip, out var t) ||
-                !HandTracking.TryGetJoint(true, UnityEngine.XR.Hands.XRHandJointID.IndexDistal, out var d)) return false;
-            tip = t.position; distal = d.position; rot = t.rotation;
-            return true;
-        }
 
         /// <summary>Right controller pose in tracking space (OpenXR grip pose).</summary>
         public static bool RightPose(out Vector3 pos, out Quaternion rot)

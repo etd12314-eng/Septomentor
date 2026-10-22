@@ -6,7 +6,8 @@ namespace SeptoMentor
 {
     /// <summary>
     /// Grid of buttons pressed by poking them with an index fingertip (hand tracking).
-    ///   LeftPalm: appears above the left hand when its palm faces the head; poked with the right index finger.
+    ///   LeftPalm: appears above the left hand when the open palm (not pinching) has faced the head for 0.25 s;
+    ///     poked with the right index finger.
     ///     It stops following the hand while the right finger is near it (so it does not slide away while
     ///     being poked) and stays up briefly after the palm turns away.
     ///   Fixed: stays where the owner puts it; poked with either index finger.
@@ -42,7 +43,8 @@ namespace SeptoMentor
         readonly Dictionary<string, Button> _byId = new Dictionary<string, Button>();
         Transform _root, _cursor;
         bool _shown;
-        float _cooldownUntil, _lastFacing = -10f;
+        float _cooldownUntil, _lastFacing = -10f, _facingSince = -1f;
+        bool _fingerNear;
 
         /// <summary>True while any menu's "home" button has been held for longer than <paramref name="seconds"/>.</summary>
         public static bool HomeHeldFor(float seconds)
@@ -52,6 +54,9 @@ namespace SeptoMentor
         }
 
         public bool Visible => _shown;
+
+        /// <summary>The menu is up and a poking fingertip is within 15 cm of it.</summary>
+        public bool FingerNear => _shown && _fingerNear;
 
         void Awake()
         {
@@ -178,12 +183,24 @@ namespace SeptoMentor
         bool PlacePalm()
         {
             if (head == null) return false;
-            bool fingerNear = _shown && Fingertip(true) is Vector3 f && Vector3.Distance(f, transform.position) < 0.15f;
+            bool fingerNear = _fingerNear = _shown && Fingertip(true) is Vector3 f && Vector3.Distance(f, transform.position) < 0.15f;
             if (!HandTracking.TryGetPalmWorld(false, out var palm, out var normal))
                 return _shown && (fingerNear || Time.time - _lastFacing < 0.8f);
             float facing = Vector3.Dot(normal, (head.position - palm).normalized);
-            if (facing >= (_shown ? 0.25f : 0.5f)) _lastFacing = Time.time;
-            else if (!_shown || !fingerNear && Time.time - _lastFacing > 0.8f) return false;
+            // A pinching left hand is the trigger, not a request for the menu.
+            bool pinching = HandTracking.PinchDistance(false) < 0.03f;
+            if (facing >= (_shown ? 0.25f : 0.5f) && !(pinching && !fingerNear))
+            {
+                if (_facingSince < 0f) _facingSince = Time.time;
+                if (_shown || Time.time - _facingSince >= 0.25f) _lastFacing = Time.time;
+                else return false;
+            }
+            else
+            {
+                _facingSince = -1f;
+                if (pinching && !fingerNear) return false;
+                if (!_shown || !fingerNear && Time.time - _lastFacing > 0.8f) return false;
+            }
             if (fingerNear) return true;   // hold still while being poked
 
             // Beside the palm toward the thumb side is hard to reach; above the hand works for either size.
