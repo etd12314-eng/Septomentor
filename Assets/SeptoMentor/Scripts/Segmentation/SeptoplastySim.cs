@@ -11,7 +11,7 @@ namespace SeptoMentor
     /// (HandInstruments calls Step every frame with the tip pose in the patient's local space):
     ///   Incision  - scalpel drawn along the Killian line through the mucoperichondrium (strip cut segment by segment);
     ///   Elevation - Freer in the subperichondrial plane, spreading from the incision (flap lifted off the cartilage);
-    ///   Resection - through-cutting forceps bites (trigger) remove the deviated cartilage chunk by chunk, L-strut guarded;
+    ///   Resection - through-cutting forceps bites (trigger) excise the septal spur piece by piece, L-strut guarded;
     ///   Closure   - Freer / suction lays the flap back.
     /// Each completed step advances the mentor's phase. Bleeding at cuts (cleared with the suction, trigger),
     /// mucosal tears on rough handling, and controller vibration that follows what the tip touches.
@@ -394,7 +394,7 @@ namespace SeptoMentor
                 _flapDirty = true;
                 if (Phase == SurgicalPhase.Incision && CutCount() == _segOpenCount) mentor?.SetPhase(SurgicalPhase.FlapElevation, false);
                 if (Phase == SurgicalPhase.FlapElevation && ElevatedFraction() >= 0.8f)
-                    Advance(SurgicalPhase.Resection, "Flap elevated over the deviated cartilage. Take the through-cutting forceps and bite out the deviated part (trigger) - keep the L-strut.");
+                    Advance(SurgicalPhase.Resection, "Flap elevated over the spur. Take the through-cutting forceps and excise the spur (trigger) - keep the L-strut.");
                 UpdateProgress();
             }
             // Scraping on cartilage: a crisp click every 1.5 mm of sweep.
@@ -506,13 +506,13 @@ namespace SeptoMentor
                 Haptics.Pulse(hand, 1f, 0.09f);
                 Haptics.Pattern(hand, 3, 0.5f, 0.015f, 0.025f);
                 AddBlood(new Vector3(NasalAnatomy.SeptumFace(s, p) + 0.2f, s, p), 0.6f);
-                if (pen0 > NasalAnatomy.ContralateralDepth + 0.6f)
+                if (pen0 > NasalAnatomy.ContralateralDepth + NasalAnatomy.Spur(s, p) + 0.6f)
                 {
                     Tears++;
                     Say("contra", "The bite went through the opposite mucoperichondrium: risk of septal perforation. Keep the jaws on the cartilage.", Severity.Warning, 4f);
                 }
                 if (CountRemoved() == CS * CP)
-                    Advance(SurgicalPhase.Closure, "Deviated cartilage removed, L-strut intact. Lay the flap back with the Freer or the suction.");
+                    Advance(SurgicalPhase.Closure, "Spur excised, L-strut intact. Lay the flap back with the Freer or the suction.");
                 UpdateProgress();
                 return;
             }
@@ -525,7 +525,7 @@ namespace SeptoMentor
                 return;
             }
             Haptics.Pulse(hand, 0.3f, 0.03f);
-            Say("outside", "That cartilage is not deviated - no need to remove it.", Severity.Tip, 6f);
+            Say("outside", "That is not the spur - no need to remove it.", Severity.Tip, 6f);
         }
 
         // ------------------------------------------------------------------ other walls

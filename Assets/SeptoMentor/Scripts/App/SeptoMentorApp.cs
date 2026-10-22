@@ -158,7 +158,7 @@ namespace SeptoMentor
             (hands != null ? "RIGHT hand = instruments (Mayo stand on your right)\n" +
                              "  Grip over an instrument: take it   Grip again: hand it back\n" +
                              "  Trigger: forceps bite / suction\n" +
-                             "  Scalpel: incision line   Freer: lift the flap   Forceps: deviated cartilage\n" : "") +
+                             "  Scalpel: incision line   Freer: lift the flap   Forceps: excise the spur\n" : "") +
             "Right stick  look around (autopilot)\n" +
             "Left stick  advance / withdraw scope (autopilot)\n" +
             "Right stick click  labels on/off\n" +

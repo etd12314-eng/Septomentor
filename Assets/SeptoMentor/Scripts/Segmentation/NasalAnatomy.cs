@@ -7,8 +7,8 @@ namespace SeptoMentor
 {
     /// <summary>
     /// Procedural right nasal cavity for endoscopic septoplasty training (synthetic, NOT patient data):
-    /// vestibule with vibrissae, internal valve, septum with a C-shaped deviation to the right and a
-    /// basal spur, inferior and middle turbinates, nasal floor, narrowing roof, choana and nasopharynx
+    /// vestibule with vibrissae, internal valve, an almost straight septum with an isolated septal spur
+    /// (chondro-vomerine ridge) pointing into the operated cavity, inferior and middle turbinates, nasal floor, narrowing roof, choana and nasopharynx
     /// with Eustachian tori. Built as a signed-distance field (mm) and meshed with SurfaceNets.
     ///
     /// The septal flap area is made of separate pieces that SeptoplastySim changes as the resident operates:
@@ -17,8 +17,8 @@ namespace SeptoMentor
     /// ~10 mm L-strut) with the contralateral mucoperichondrium behind it.
     ///
     /// The operated cavity is the patient's LEFT side (left-nostril approach). The RIGHT cavity is modelled too, as the
-    /// mirror image of the same walls facing the concave side of the deviation (wider), so the endoscope can examine
-    /// both sides; it has no surgical pieces. The field is written for the right side
+    /// mirror image of the same walls (the spur does not reach into it), so the endoscope can examine both sides;
+    /// it has no surgical pieces. The field is written for the right side
     /// ("work frame") and mirrored at the end: L_patient = Mirror * L_work. Everything public that takes or returns
     /// millimetres (Depth, SeptumFace, the flap constants) is in the work frame.
     /// Frame of the meshes: the CT phantom's (L, S, P), in metres in the VirtualPatient's local space
@@ -57,15 +57,15 @@ namespace SeptoMentor
         /// <summary>Autopilot path (m, patient frame): from the left nostril up and back through the common meatus (>= 2 mm clearance).</summary>
         public static readonly Vector3 PathStart = FromWork(new Vector3(-7.5f, -25f, -86f)) * 0.001f, PathEnd = FromWork(new Vector3(-8.5f, -2f, -30f)) * 0.001f;
 
-        // Flap area (S, P mm) on the right septal face, the incision strip in front of it (~24 mm Killian incision),
-        // and the resection window (~18 x 18 mm over the deviation; leaves a dorsal and a caudal strut of 17-19 mm).
-        public const float FlapP0 = -71f, FlapP1 = -34f, FlapS0 = -18f, FlapS1 = 6f, IncisionP0 = -72.2f;
-        public const float WinP0 = -57f, WinP1 = -39f, WinS0 = -15f, WinS1 = 3f;
-        /// <summary>Bites above / in front of these cut into the 10 mm L-strut (dorsum at S ~22, caudal end at P ~-74).</summary>
-        public const float DorsalStrutS = 12f, CaudalStrutP = -64f;
+        // Flap area (S, P mm) on the septal face, the incision strip in front of it (~24 mm Killian incision about
+        // 1 cm behind the caudal septal edge), and the excision window over the spur (~9 x 22 mm).
+        public const float FlapP0 = -66f, FlapP1 = -30f, FlapS0 = -24.5f, FlapS1 = -0.5f, IncisionP0 = -67.2f;
+        public const float WinP0 = -56f, WinP1 = -34f, WinS0 = -21.5f, WinS1 = -12.5f;
+        /// <summary>Bites above / in front of these cut into the 10 mm L-strut (dorsum at S ~22, caudal end at P ~-76).</summary>
+        public const float DorsalStrutS = 12f, CaudalStrutP = -65f;
         public const float CartilageDepth = 0.9f, ContralateralDepth = 2.6f;
         /// <summary>The incision strip is cut segment by segment (along S); the window is resected chunk by chunk.</summary>
-        public const int IncisionSegments = 6, ChunksS = 3, ChunksP = 3;
+        public const int IncisionSegments = 6, ChunksS = 2, ChunksP = 4;
 
         static readonly Color Mucosa = new Color(0.90f, 0.55f, 0.56f), Turbinate = new Color(0.82f, 0.42f, 0.45f),
                               Floor = new Color(0.88f, 0.52f, 0.52f), Pharynx = new Color(0.78f, 0.38f, 0.40f),
@@ -98,13 +98,22 @@ namespace SeptoMentor
 
         static float Window(float x, float a, float b, float w) => 1f / (1f + Mathf.Exp(-(x - a) / w)) / (1f + Mathf.Exp((x - b) / w));
 
-        /// <summary>Septal midline offset (mm, negative = toward the patient's right).</summary>
+        /// <summary>Septal midline offset (mm, negative = toward the operated cavity): only a slight bow.</summary>
         public static float Deviation(float s, float p) =>
-            -4.5f * Mathf.Exp(-((s + 6) * (s + 6) / 110f + (p + 45) * (p + 45) / 300f))   // C-shaped deviation
-            - 3.2f * Mathf.Exp(-(s + 22) * (s + 22) / 5f) * Window(p, -58, -14, 3);          // basal spur (vomer / crest junction)
+            -0.8f * Mathf.Exp(-((s + 6) * (s + 6) / 110f + (p + 45) * (p + 45) / 300f));
 
-        /// <summary>Right mucosal face of the septum (L, mm).</summary>
-        public static float SeptumFace(float s, float p) => Deviation(s, p) - 1.8f - SwellBody(s, p);
+        /// <summary>
+        /// Isolated septal spur, mm toward the operated cavity: a sharp horizontal ridge at the chondro-vomerine
+        /// junction, rising slightly backward, spindle-shaped along P, its crest ~2 mm short of the inferior turbinate.
+        /// </summary>
+        public static float Spur(float s, float p)
+        {
+            float ds = (s - (-17f + 0.1f * (p + 45f))) / 2.6f, dp = (p + 45f) / 9f;
+            return 4f * Mathf.Exp(-ds * ds - dp * dp);
+        }
+
+        /// <summary>Mucosal face of the septum on the operated side (L, mm, work frame), spur included.</summary>
+        public static float SeptumFace(float s, float p) => Deviation(s, p) - 1.8f - SwellBody(s, p) - Spur(s, p);
 
         /// <summary>Septal swell body (erectile mucosa opposite the middle turbinate), mm toward the cavity.</summary>
         static float SwellBody(float s, float p) => 1.5f * Mathf.Exp(-((s - 7) * (s - 7) / 28f + (p + 47) * (p + 47) / 70f));
@@ -143,7 +152,7 @@ namespace SeptoMentor
         static void Components(float l, float s, float p, float[] c, float side = 1f)
         {
             float face = side * Deviation(s, p) - 1.8f;
-            c[(int)Wall.Septum] = l - (face - SwellBody(s, p));
+            c[(int)Wall.Septum] = l - (face - SwellBody(s, p) - (side > 0 ? Spur(s, p) : 0f));
             // Lateral wall; in front it converges on the septum into the internal nasal valve (limen nasi): a slit
             // between septum and upper lateral cartilage, narrow at the top, wider along the floor, closing in front of it.
             float lat0 = -15f + Mathf.Max(0, s - 2) * 0.38f;
@@ -318,7 +327,7 @@ namespace SeptoMentor
                 Sheet(Get($"Cartilage_Chunk_{i}_{j}", Structure.SeptalCartilage, Cartilage),
                       new Rect(win.x + i * cw, win.y + j * ch, cw, ch), CartilageDepth, null, null, stepMm);
             Sheet(Get("Contralateral_Mucoperichondrium", Structure.MucoperichondrialFlap, Contra),
-                  new Rect(win.x - 0.5f, win.y - 0.5f, win.width + 1f, win.height + 1f), ContralateralDepth, null, null, stepMm);
+                  new Rect(win.x - 0.5f, win.y - 0.5f, win.width + 1f, win.height + 1f), ContralateralDepth, Spur, null, stepMm);   // the flat far side
             WindowRim(Get("Cartilage_CutEdge", Structure.SeptalCartilage, Cartilage * 0.92f), win, stepMm);
 
             progress?.Invoke("vibrissae");
@@ -440,8 +449,8 @@ namespace SeptoMentor
                 var a = ring[k]; var b = ring[(k + 1) % ring.Count];
                 var a0 = new Vector3(SeptumFace(a.x, a.y) + CartilageDepth, a.x, a.y) * 0.001f;
                 var b0 = new Vector3(SeptumFace(b.x, b.y) + CartilageDepth, b.x, b.y) * 0.001f;
-                var a1 = new Vector3(SeptumFace(a.x, a.y) + ContralateralDepth, a.x, a.y) * 0.001f;
-                var b1 = new Vector3(SeptumFace(b.x, b.y) + ContralateralDepth, b.x, b.y) * 0.001f;
+                var a1 = new Vector3(SeptumFace(a.x, a.y) + ContralateralDepth + Spur(a.x, a.y), a.x, a.y) * 0.001f;
+                var b1 = new Vector3(SeptumFace(b.x, b.y) + ContralateralDepth + Spur(b.x, b.y), b.x, b.y) * 0.001f;
                 AddTri(pc, a0, b0, a1);
                 AddTri(pc, b0, b1, a1);
             }

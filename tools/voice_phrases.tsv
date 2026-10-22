@@ -2,7 +2,7 @@
 phase_Setup	Hazırlık. Endoskopla kaudal septumu, konkaları ve burun tabanını tanıyın.
 phase_Incision	İnsizyon. Mukoperikondriyumu kıkırdağa kadar kesin, kıkırdağı kesmeyin.
 phase_FlapElevation	Flep kaldırma. Perikondriyumun altında kalın. Flebin altında mavimsi beyaz kıkırdak görmelisiniz.
-phase_Resection	Rezeksiyon. Sadece deviye kısmı çıkarın. Yaklaşık on milimetrelik L desteği bırakın.
+phase_Resection	Rezeksiyon. Sadece spuru çıkarın. Yaklaşık on milimetrelik L desteği bırakın.
 phase_Closure	Kapanış. Flepleri yırtık açısından kontrol edin ve yerine yatırın.
 name_Setup	Hazırlık aşamasındasınız.
 name_Incision	İnsizyon aşamasındasınız.
@@ -21,8 +21,8 @@ pct_80	Yüzde seksen tamamlandı.
 pct_90	Neredeyse bitti, yüzde doksan.
 pct_100	Bu adım tamamlandı.
 done_FlapElevation	İnsizyon tamam. Kaldırıcıyı alın ve flebi perikondriyumun altından kaldırın.
-done_Resection	Flep kaldırıldı. Kesici makası alın ve deviye kıkırdağı ısırarak çıkarın. L desteği koruyun.
-done_Closure	Deviye kıkırdak çıkarıldı, L destek sağlam. Flebi kaldırıcı ya da aspiratörle yerine yatırın.
+done_Resection	Flep spurun üzerinden kaldırıldı. Kesici makası alın ve spuru ısırarak eksize edin. L desteği koruyun.
+done_Closure	Spur eksize edildi, L destek sağlam. Flebi kaldırıcı ya da aspiratörle yerine yatırın.
 done_all	Flep yerine yatırıldı. Septoplasti tamamlandı. Sonuçlar monitörde.
 inc_deep	Çok derin! Bıçak kıkırdağı geçiyor, karşı flep risk altında. Sadece mukoperikondriyumu kesin.
 tear_scalpel_flap	Dikkat! Bistüri insizyon hattı dışında flebi kesti. Mukozal yırtık.
@@ -33,7 +33,7 @@ tear_bite_flap	Dikkat! Makas kaldırılmamış mukozayı ısırdı. Önce bu bö
 contra	Dikkat! Isırık karşı taraf mukoperikondriyumunu geçti. Septal perforasyon riski.
 strut_dorsal	Dur! Burası dorsal destek. En az on milimetre koruyun. Isırık alınmadı.
 strut_caudal	Dur! Burası kaudal destek. En az on milimetre koruyun. Isırık alınmadı.
-outside	Bu kıkırdak deviye değil, çıkarmaya gerek yok.
+outside	Burası spur değil, çıkarmaya gerek yok.
 tear_scalpel_wall	Dikkat! Bistüri konkayı kesti, kanama var. Bıçağı septumda tutun.
 tear_bite_wall	Dikkat! Makas yan duvarı ısırdı. Sadece kaldırılmış flebin altındaki kıkırdağı ısırın.
 bone	Kemik septum. Keskin kesin, asla döndürmeyin. Kafa tabanı riski.

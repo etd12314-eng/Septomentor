@@ -117,9 +117,9 @@ namespace SeptoMentor
         {
             switch (s)
             {
-                case Structure.Scalpel: return ": draw it along the incision line in front of the deviation, down to the cartilage.";
+                case Structure.Scalpel: return ": draw it along the incision line, about 1 cm behind the caudal septal edge, down to the cartilage.";
                 case Structure.FreerElevator: return ": slide it under the flap through the incision and sweep it flat on the cartilage.";
-                case Structure.ScissorsForceps: return ": trigger = bite. Remove the deviated cartilage, keep the L-strut.";
+                case Structure.ScissorsForceps: return ": trigger = bite. Excise the spur, keep the L-strut.";
                 case Structure.Suction: return ": trigger = suction. Clear the blood; it also lays the flap back.";
             }
             return "";

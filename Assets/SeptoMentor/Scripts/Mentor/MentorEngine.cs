@@ -77,7 +77,7 @@ namespace SeptoMentor
                 case SurgicalPhase.Setup: return "Setup: orient the scope, identify caudal septum, turbinates and nasal floor.";
                 case SurgicalPhase.Incision: return "Incision: cut through mucoperichondrium down to cartilage, not into it.";
                 case SurgicalPhase.FlapElevation: return "Flap elevation: stay subperichondrial - bluish-white cartilage under the flap.";
-                case SurgicalPhase.Resection: return "Resection: remove only the deviated portion; keep an L-strut of about 10 mm.";
+                case SurgicalPhase.Resection: return "Resection: excise the spur only; keep an L-strut of about 10 mm.";
                 case SurgicalPhase.Closure: return "Closure: inspect both flaps for tears, reposition, then quilt or splint per attending.";
             }
             return p.ToString();
