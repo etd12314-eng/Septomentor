@@ -185,7 +185,7 @@ namespace SeptoMentor.Nav
             if (_in.StickStepY != 0) _caseIdx = (_caseIdx - _in.StickStepY + _cases.Count) % _cases.Count;
             var sb = new StringBuilder();
             for (int i = 0; i < _cases.Count; i++) sb.Append(i == _caseIdx ? "> " : "   ").Append(_cases[i]).Append('\n');
-            sb.Append("Copy CT folders (DICOM or .nrrd) to Android/data/org.septomentor.app/files/Cases/<name>/");
+            sb.Append("Copy CT folders (DICOM, DICOM CD or .nrrd) or a .zip of one to Android/data/org.septomentor.app/files/Cases/");
             dashboard.SetStep("1. Select case  (right stick up/down, A = load)", sb.ToString());
             if (_in.A) StartLoad(_cases[_caseIdx]);
         }

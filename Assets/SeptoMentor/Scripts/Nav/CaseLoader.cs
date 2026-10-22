@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using UnityEngine;
 
@@ -11,11 +12,12 @@ namespace SeptoMentor.Nav
     /// Patient cases live on the headset in
     ///   /sdcard/Android/data/org.septomentor.app/files/Cases/&lt;case name&gt;/
     /// (Application.persistentDataPath/Cases). A case folder holds ONE of:
-    ///   - an uncompressed DICOM CT series (any file names, sub-folders allowed), or
+    ///   - a DICOM CT series (any file names, sub-folders and DICOMDIR CDs allowed; uncompressed, JPEG Lossless or RLE), or
     ///   - a .nrrd volume saved from 3D Slicer,
     /// plus, optionally:
     ///   - landmarks.mrk.json / *.mrk.json (3D Slicer markups; labels as in RequiredLandmarks),
     ///   - *.obj segment meshes exported from Slicer in LPS millimetres (shown as overlays).
+    /// A .zip placed directly in Cases/ is listed as a case too and unpacked into Cases/&lt;zip name&gt;/ on first load.
     /// Loading runs on a worker thread; meshes are created later on the main thread.
     /// </summary>
     public static class CaseLoader
@@ -33,7 +35,9 @@ namespace SeptoMentor.Nav
             try
             {
                 Directory.CreateDirectory(CasesRoot);
-                list.AddRange(Directory.GetDirectories(CasesRoot).Select(d => Path.GetFileName(d)).OrderBy(n => n));
+                var names = Directory.GetDirectories(CasesRoot).Select(d => Path.GetFileName(d)).ToList();
+                names.AddRange(Directory.GetFiles(CasesRoot, "*.zip").Select(f => Path.GetFileNameWithoutExtension(f)).Where(n => !names.Contains(n)));
+                list.AddRange(names.OrderBy(n => n));
             }
             catch (Exception e) { Debug.LogWarning("[SeptoMentor] cannot list cases: " + e.Message); }
             return list;
@@ -48,10 +52,15 @@ namespace SeptoMentor.Nav
                 return CtPhantom.Generate();
             }
             string dir = Path.Combine(casesRoot, name);
+            if (!Directory.Exists(dir) && File.Exists(dir + ".zip")) Unzip(dir + ".zip", dir, progress);
             var data = new CaseData { name = name };
             var nrrd = Directory.GetFiles(dir, "*.nrrd", SearchOption.AllDirectories).FirstOrDefault();
             if (nrrd != null) { progress?.Invoke("Reading " + Path.GetFileName(nrrd)); data.volume = NrrdLoader.Load(nrrd); }
-            else data.volume = DicomLoader.LoadFolder(dir, progress);
+            else
+            {
+                data.volume = DicomLoader.LoadFolder(dir, progress, out var note);
+                if (!string.IsNullOrEmpty(note)) data.warning += note + " ";
+            }
 
             progress?.Invoke("Preparing volume...");
             data.volume = data.volume.Downsampled(256);
@@ -64,6 +73,28 @@ namespace SeptoMentor.Nav
                 if (tip.HasValue) data.landmarks.Add(new Landmark("Pronasale", tip.Value));
             }
             return data;
+        }
+
+        /// <summary>Unpacks into a temporary folder first, so an interrupted unzip is not mistaken for a complete case.</summary>
+        static void Unzip(string zip, string dir, Action<string> progress)
+        {
+            string tmp = dir + ".unzipping";
+            if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+            string root = Path.GetFullPath(tmp) + Path.DirectorySeparatorChar;
+            using (var archive = new ZipArchive(File.OpenRead(zip), ZipArchiveMode.Read))
+            {
+                int n = 0;
+                foreach (var e in archive.Entries)
+                {
+                    if (++n % 50 == 0) progress?.Invoke($"Unpacking {Path.GetFileName(zip)} {n}/{archive.Entries.Count}");
+                    if (string.IsNullOrEmpty(e.Name)) continue;   // folder entry
+                    string to = Path.GetFullPath(Path.Combine(tmp, e.FullName));
+                    if (!to.StartsWith(root)) continue;            // "../" entries
+                    Directory.CreateDirectory(Path.GetDirectoryName(to));
+                    using (var src = e.Open()) using (var dst = File.Create(to)) src.CopyTo(dst);
+                }
+            }
+            Directory.Move(tmp, dir);
         }
 
         [Serializable] class MarkupsFile { public Markup[] markups; }
