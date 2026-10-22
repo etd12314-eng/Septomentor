@@ -21,8 +21,6 @@ namespace SeptoMentor
         public Transform head;
         public XRNode hand = XRNode.RightHand;
         public float grabRadius = 0.12f;
-        [Tooltip("Grip to instrument tip, m.")]
-        public float reach = 0.19f;
         [Tooltip("Steadies the instrument against tracking jitter and hand tremor.")]
         public PoseFilter smoothing = new PoseFilter();
 
@@ -179,7 +177,7 @@ namespace SeptoMentor
             if (_held < 0) { vi.Set(Structure.Background); return; }
 
             var t = _tools[_held];
-            var tip = wPos + wRot * new Vector3(0, 0, reach);
+            var tip = wPos + wRot * new Vector3(0, 0, t.model.grip);   // the hand holds each instrument where a surgeon would
             t.model.root.SetPositionAndRotation(tip, wRot);
             t.model.SetJaw(1f - trig);
 
@@ -207,7 +205,7 @@ namespace SeptoMentor
                 for (int i = 0; i < _tools.Length; i++)
                 {
                     var r = _tools[i].model.root;
-                    d[i] = _tools[i].returning >= 0 ? float.MaxValue : Vector3.Distance(handPos, r.position - r.forward * 0.13f);   // middle of the handle
+                    d[i] = _tools[i].returning >= 0 ? float.MaxValue : Vector3.Distance(handPos, r.position - r.forward * _tools[i].model.grip);   // where it is held
                     if (d[i] < bestD) { bestD = d[i]; best = i; }
                 }
                 if (_hover >= 0 && d[_hover] < grabRadius + 0.03f && (best < 0 || d[_hover] < bestD + 0.02f)) best = _hover;

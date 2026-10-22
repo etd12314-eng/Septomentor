@@ -142,12 +142,18 @@ namespace SeptoMentor
         /// </summary>
         static void Components(float l, float s, float p, float[] c, float side = 1f)
         {
-            c[(int)Wall.Septum] = l - (side * Deviation(s, p) - 1.8f - SwellBody(s, p));
-            c[(int)Wall.Lateral] = (-15f + Mathf.Max(0, s - 2) * 0.38f) - l;
+            float face = side * Deviation(s, p) - 1.8f;
+            c[(int)Wall.Septum] = l - (face - SwellBody(s, p));
+            // Lateral wall; in front it converges on the septum into the internal nasal valve (limen nasi): a slit
+            // between septum and upper lateral cartilage, narrow at the top, wider along the floor, closing in front of it.
+            float lat0 = -15f + Mathf.Max(0, s - 2) * 0.38f;
+            float valveW = Mathf.Clamp(9f - 0.3f * (s + 26f), 1f, 12f) * (1f - Mathf.Clamp01((-77f - p) / 6f));
+            float toValve = Mathf.Pow(Mathf.Clamp01((-56f - p) / 20f), 1.5f);
+            c[(int)Wall.Lateral] = Mathf.Lerp(lat0, face - valveW, toValve) - l;
             float ant = Mathf.Max(0, -60 - p);
             c[(int)Wall.Floor] = -27f + 0.004f * ant * ant - s;
             c[(int)Wall.Roof] = s - Roof(p);
-            c[(int)Wall.Vestibule] = Capsule(new Vector3(l, s, p), new Vector3(-7.4f, -28.6f, -104f), new Vector3(-8f, -19f, -68f), 3.9f, 5.5f);   // runs out of the grid: open nostril
+            c[(int)Wall.Vestibule] = Vestibule(l, s, p);
             float np = SMax(SMax(Mathf.Abs(l) - 15f, p - 30f, 4), SMax(-25f - s, s - (14f - (p - 5f) * 0.6f), 4), 4);
             c[(int)Wall.Pharynx] = SMax(np, PosteriorEdge(s) - p - 2f, 2);
             float rough = Noise(l / 2.2f, s / 2.2f, p / 3.5f) - 0.5f;   // corrugated turbinate mucosa
@@ -161,6 +167,18 @@ namespace SeptoMentor
                                          Ell(l, s, p, -15f, 13.5f, -50f, 2.2f, 3.5f, 4.5f), 2);   // uncinate process + agger nasi
             c[(int)Wall.Adenoid] = Ell(l, s, p, 0, 10, 24, 13, 6, 7) - 1.4f * (Noise(l / 2f, s / 2f, p / 2f) - 0.5f);
         }
+
+        /// <summary>
+        /// Nasal vestibule: the naris exactly as cut into the face (CtPhantom.Nostril, so the endoscope enters through
+        /// the nostril it sees) and the skin-lined chamber rising from it up and back under the ala to the valve.
+        /// </summary>
+        static float Vestibule(float l, float s, float p)
+        {
+            float naris = CtPhantom.Nostril(new Vector3(-l, s, p));
+            return SMin(naris, Capsule(new Vector3(l, s, p), VestA, VestB, 3.3f, 4.0f), 2.5f);
+        }
+
+        static readonly Vector3 VestA = new Vector3(-7.8f, -26.8f, -86f), VestB = new Vector3(-7.4f, -23.5f, -76f);
 
         /// <summary>
         /// Signed distance to the airway wall of both cavities, mm: negative in air, positive in tissue.
@@ -178,8 +196,8 @@ namespace SeptoMentor
         {
             Components(l, s, p, c, side);
             float cav = SMax(SMax(c[(int)Wall.Septum], c[(int)Wall.Lateral], 2), SMax(c[(int)Wall.Floor], c[(int)Wall.Roof], 2), 2);
-            cav = SMax(cav, SMax(-74f - p, p - PosteriorEdge(s), 2), 2);
-            float a = SMin(SMin(cav, c[(int)Wall.Vestibule], 3), c[(int)Wall.Pharynx], 3);
+            cav = SMax(cav, SMax(-88f - p, p - PosteriorEdge(s), 2), 2);   // the front is closed by the valve (Lateral)
+            float a = SMin(SMin(cav, c[(int)Wall.Vestibule], 4), c[(int)Wall.Pharynx], 3);
             a = SMin(a, Ell(l, s, p, -15.6f, -24.5f, -50f, 1.0f, 1.4f, 2.4f), 0.6f);                 // Hasner's valve
             a = SMin(a, Ell(Mathf.Abs(l), s, p, 12.2f, -9.5f, 15f, 1.5f, 2.6f, 1.8f), 0.8f);         // Eustachian orifices
             a = SMax(a, -c[(int)Wall.InfTurb], 1.5f);
@@ -232,9 +250,9 @@ namespace SeptoMentor
             {
                 int a = sn.triangles[t], b = sn.triangles[t + 1], c = sn.triangles[t + 2];
                 var m = (sn.vertices[a] + sn.vertices[b] + sn.vertices[c]) * (1000f / 3f);
-                // The vestibules run out through the nasal base: keep only what lies inside the face (the endoscope
-                // sees the outer skin there, PatientModel.EndoscopeHead).
-                if (m.z < -70f && CtPhantom.SkinSdf(FromWork(m)) > 0.3f) continue;
+                // The nares run out through the nasal base: keep only what lies inside the (uncut) face; the endoscope
+                // sees the outer skin around them (PatientModel.EndoscopeHead, which leaves the nostrils open).
+                if (m.z < -70f && CtPhantom.SkinSdf(FromWork(m), false) > 0.3f) continue;
                 bool other = m.x > Deviation(m.y, m.z);
                 Components(other ? -m.x : m.x, m.y, m.z, buf, other ? -1f : 1f);
                 int best = 0;
@@ -433,17 +451,17 @@ namespace SeptoMentor
         static void Vibrissae(Piece pc, float side)
         {
             var rnd = new System.Random(7);
-            Vector3 a = new Vector3(-7.5f, -27f, -92f), b = new Vector3(-8f, -19f, -68f);
+            Vector3 a = VestA, b = VestB;
             var axis = (b - a).normalized;
             var u = Vector3.Cross(axis, Vector3.right).normalized; var v = Vector3.Cross(axis, u);
             for (int h = 0; h < 70; h++)
             {
-                float t = 0.12f + 0.3f * (float)rnd.NextDouble(), ang = (float)(rnd.NextDouble() * Math.PI * 2);
-                float r = Mathf.Lerp(4.2f, 5.5f, t) * 0.92f;
+                float t = 0.05f + 0.45f * (float)rnd.NextDouble(), ang = (float)(rnd.NextDouble() * Math.PI * 2);
+                float r = Mathf.Lerp(3.3f, 4.0f, t) * 0.95f;
                 var radial = u * Mathf.Cos(ang) + v * Mathf.Sin(ang);
                 var root = a + (b - a) * t + radial * r;
                 var dir = (-radial * 0.8f - axis * 0.6f).normalized;
-                float len = 2.5f + 3f * (float)rnd.NextDouble(), w = 0.07f;
+                float len = 1.8f + 2.2f * (float)rnd.NextDouble(), w = 0.07f;
                 var tip = root + dir * len + radial * 0.3f;
                 var s1 = Vector3.Cross(dir, radial).normalized * w; var s2 = radial * w;
                 Vector3 r0 = (root + s1) * 0.001f, r1 = (root - s1 + s2) * 0.001f, r2 = (root - s1 - s2) * 0.001f, tp = tip * 0.001f;

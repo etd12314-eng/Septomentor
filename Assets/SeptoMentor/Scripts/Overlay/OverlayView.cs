@@ -20,8 +20,9 @@ namespace SeptoMentor
         public float monitorSize = 48f;
 
         [Header("Overlay")]
-        [Range(0, 1)] public float fillOpacity = 0.30f;
-        [Range(0, 1)] public float outline = 0.9f;
+        [Tooltip("Class colour over the video: faint, so the tissue itself stays readable.")]
+        [Range(0, 1)] public float fillOpacity = 0.08f;
+        [Range(0, 1)] public float outline = 0.35f;
         public bool showLabels = true;
         public int minLabelPixels = 120;
 
@@ -110,7 +111,9 @@ namespace SeptoMentor
                 l.go.transform.localPosition = new Vector3((a.x - 0.5f) * monitorSize, (a.y - 0.5f) * monitorSize + 1f, -0.4f);
                 string name = StructureInfo.DisplayName(s);
                 if (!provider.LabelsValidated) name += " ?";
-                l.Set(name, StructureInfo.OverlayColor(s));
+                var col = (Color)StructureInfo.OverlayColor(s);
+                col.a = 0.6f;
+                l.Set(name, col);
             }
         }
 

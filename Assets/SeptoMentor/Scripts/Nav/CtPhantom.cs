@@ -102,7 +102,8 @@ namespace SeptoMentor.Nav
         /// a lobule with two tip-defining domes, the alar lobules swept around the nostrils, a columella, and
         /// teardrop nostrils that open into NasalAnatomy's vestibule.
         /// </summary>
-        public static float SkinSdf(Vector3 p)
+        /// <param name="nostrils">False: the closed skin (no nostrils cut in), the volume the nasal vestibules lie in.</param>
+        public static float SkinSdf(Vector3 p, bool nostrils = true)
         {
             var m = new Vector3(Mathf.Abs(p.x), p.y, p.z);   // mirrored for paired features
             float d = Loft(p);
@@ -120,7 +121,7 @@ namespace SeptoMentor.Nav
                 ear = SMin(ear, Ell(m, new Vector3(73, 14, 4), new Vector3(4, 5, 3.5f)), 1.5f);                   // tragus
                 d = SMin(d, ear, 3);
             }
-            if (m.x < 16 && p.y > -36 && p.y < -14 && p.z < -75) d = SSub(d, Nostril(m), 0.8f);
+            if (nostrils && m.x < 16 && p.y > -36 && p.y < -14 && p.z < -75) d = SSub(d, Nostril(m), 0.8f);
             return d;
         }
 

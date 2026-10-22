@@ -64,7 +64,7 @@ namespace SeptoMentor
                 go.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh;
                 var mat = new Material(shader);
                 Color c = StructureInfo.OverlayColor(part.structure);
-                c.a = 0.35f;
+                c.a = 0.22f;
                 mat.SetColor("_Color", c);
                 go.AddComponent<MeshRenderer>().sharedMaterial = mat;
                 _mirror.Add(new Mirror { part = part.gameObject, ghost = go });
