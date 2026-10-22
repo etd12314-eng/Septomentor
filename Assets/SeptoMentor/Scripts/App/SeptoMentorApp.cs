@@ -109,6 +109,7 @@ namespace SeptoMentor
             Procedure = p;
             hands?.SetProcedure(p);
             mentor.septoplastyRules = p == Procedure.Septoplasty;
+            if (scope != null) scope.collide = p == Procedure.Fess;
             var syn = Synthetic;
             if (syn != null && syn.Instrument != null)
             {
@@ -185,6 +186,7 @@ namespace SeptoMentor
                 case VoiceCommand.Backbiter: hands?.Request(Tool.Backbiter); break;
                 case VoiceCommand.Shaver: hands?.Request(Tool.Microdebrider); break;
                 case VoiceCommand.CurvedSuction: hands?.Request(Tool.CurvedSuction); break;
+                case VoiceCommand.Curette: hands?.Request(Tool.JCurette); break;
                 case VoiceCommand.Release: hands?.Request(Tool.None); voice?.Reply("tool_none"); break;
                 case VoiceCommand.LabelsOn: overlay.SetLabels(true); voice?.Reply("labels_on"); break;
                 case VoiceCommand.LabelsOff: overlay.SetLabels(false); voice?.Reply("labels_off"); break;
@@ -245,13 +247,13 @@ namespace SeptoMentor
             (hands != null ? "RIGHT hand = instruments (Mayo stand on your right)\n" +
                              "  Grip over an instrument: take it   Grip again: hand it back\n" +
                              "  Trigger: bite / suction / shaver\n" +
-                             (Fess ? "  Probe: find ostia   Sickle: incise uncinate   Backbiter / Blakesley / shaver: remove\n"
+                             (Fess ? "  Probe: find ostia   Sickle: incise uncinate   Backbiter / Blakesley / J curette / shaver: remove\n"
                                    : "  Scalpel: incision line   Freer: lift the flap   Forceps: excise the spur\n") : "") +
             "Right stick  look around (autopilot)\n" +
             "Left stick  advance / withdraw scope (autopilot)\n" +
             "Right stick click  labels on/off\n" +
             (commands != null ? Display("VOICE (Turkish): sonraki adım / baştan başla / " +
-                                        (Fess ? "eğri bıçak, sonda, düz pens, yukarı pens, ters pens, tıraş, eğri emme ver /\n  hedefler / "
+                                        (Fess ? "eğri bıçak, sonda, düz pens, yukarı pens, kaşık, ters pens, tıraş, eğri emme ver /\n  hedefler / "
                                               : "neşter, kaldırıcı, makas, emme ver /\n  ") +
                                         "aleti bırak / sıfır-otuz-yetmiş derece / birinci-ikinci ameliyat /\n" +
                                         "  az-normal-çok konuş / durum nedir / ne yapmalıyım / tekrar / sesi kapat-aç / yardım") : "");
@@ -272,6 +274,11 @@ namespace SeptoMentor
                 _voiceStatus = commands.Status;
                 overlay.ShowMentor(Display(_voiceStatus), Severity.Info, 4f);
             }
+            // Where the instrument is when the endoscope does not show it: an arrow at the edge of the image.
+            var vi = syn.Instrument;
+            if (vi != null && vi.Tip != null && vi.CurrentTool != Tool.None && syn.EndoCamera != null)
+                overlay.SetPointer(syn.EndoCamera.WorldToViewportPoint(vi.Tip.position));
+            else overlay.SetPointer(null);
             var line = PhaseLine(mentor.Phase, _manualPhase);
             if (line != _progress) { _progress = line; overlay.SetPhase(line); }
         }

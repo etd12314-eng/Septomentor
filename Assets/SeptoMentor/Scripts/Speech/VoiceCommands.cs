@@ -14,7 +14,7 @@ namespace SeptoMentor
     {
         Next, Previous, Restart, Scalpel, Elevator, Forceps, Suction, Release, LabelsOn, LabelsOff, Recenter,
         Status, Hint, Repeat, Mute, Unmute, ScopeHand, ScopeAuto, Ask, Help,
-        Sickle, Probe, BlakesleyStraight, BlakesleyUp, Backbiter, Shaver, CurvedSuction,   // FESS instruments
+        Sickle, Probe, BlakesleyStraight, BlakesleyUp, Backbiter, Shaver, CurvedSuction, Curette,   // FESS instruments
         Septoplasty, Fess, Scope0, Scope30, Scope70, Quiet, NormalTalk, Verbose, Targets,
     }
 
@@ -55,7 +55,7 @@ namespace SeptoMentor
             "merkeze al", "durum nedir", "ne yapmalıyım", "ipucu", "tekrar", "sesi kapat", "sesi aç",
             "kamera elde", "kamera otomatik", "soru sor", "yardım",
             "eğri bıçak ver", "sonda ver", "düz pens ver", "yukarı pens ver", "ters pens ver", "tıraş ver", "motor ver",
-            "eğri emme ver", "birinci ameliyat", "ikinci ameliyat", "sıfır derece", "otuz derece", "yetmiş derece",
+            "eğri emme ver", "kaşık ver", "birinci ameliyat", "ikinci ameliyat", "sıfır derece", "otuz derece", "yetmiş derece",
             "az konuş", "normal konuş", "çok konuş", "hedefler", "[unk]",
         };
 
@@ -234,6 +234,7 @@ namespace SeptoMentor
             if (Has("hedef")) return VoiceCommand.Targets;
             if (Has("eğri")) return Has("emme") ? VoiceCommand.CurvedSuction : VoiceCommand.Sickle;
             if (Has("sonda")) return VoiceCommand.Probe;
+            if (Has("kaşık")) return VoiceCommand.Curette;
             if (Has("tıraş") || Has("motor")) return VoiceCommand.Shaver;
             if (Has("pens") && Has("yukarı")) return VoiceCommand.BlakesleyUp;
             if (Has("pens") && Has("ters")) return VoiceCommand.Backbiter;

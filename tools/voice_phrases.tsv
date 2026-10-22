@@ -71,7 +71,7 @@ help	Komutlar: sonraki adım, önceki adım, baştan başla. Neşter ver, kaldı
 # --- FESS (endoscopic sinus surgery) ---
 proc_fess	Endoskopik sinüs cerrahisi.
 proc_septo	Septoplasti.
-help_fess	Sinüs cerrahisi. Önce ostiumları bulun: sondayla dokunun ya da endoskopu yakından üzerinde tutun. Sonra unsinektomi, antrostomi, etmoidektomi ve sfenoidotomi. Aletler için eğri bıçak, sonda, düz pens, yukarı pens, ters pens, tıraş ve eğri emme deyin.
+help_fess	Sinüs cerrahisi. Önce ostiumları bulun: sondayla dokunun ya da endoskopu yakından üzerinde tutun. Sonra unsinektomi, antrostomi, etmoidektomi ve sfenoidotomi. Aletler için eğri bıçak, sonda, düz pens, yukarı pens, kaşık, ters pens, tıraş ve eğri emme deyin.
 scope_0	Sıfır derece endoskop.
 scope_30	Otuz derece endoskop.
 scope_70	Yetmiş derece endoskop.
@@ -88,7 +88,7 @@ tool_CurvedSuction	Eğri aspiratör.
 fess_find	Ostiumları bulun: unsinatın arkasında maksiller, etmoid bulla, üst konkanın medialinde sfenoid ve frontal reseste frontal ostium.
 fess_unc	Unsinektomi. Orak bıçakla unsinatı kesin, sonra geri ısıran pens ya da Blakesley ile alın.
 fess_antro	Maksiller antrostomi. Doğal ostiumu geriye ve aşağıya doğru genişletin, öne değil.
-fess_ant_eth	Ön etmoidektomi. Bullayı açın, yukarı açılı pensle agger nasiyi alıp frontal resesi temizleyin.
+fess_ant_eth	Ön etmoidektomi. Bullayı, sonra ön etmoid hücrelerini tek tek Blakesley pensi ya da J küretle açın. Yukarı açılı pensle agger nasiyi alıp frontal resesi temizleyin.
 fess_post_eth	Arka etmoidektomi. Bazal lamelden geçin. Kafa tabanının altında, orbitanın medialinde kalın.
 fess_sphen	Sfenoidotomi. Sfenoid ostiumu mediale ve aşağıya doğru genişletin, asla laterale değil.
 fess_done	Sinüs cerrahisi tamamlandı. Kanama kontrolü yapın ve orta konkanın yerini kontrol edin.
@@ -120,3 +120,5 @@ sphenoid_lateral	Dikkat! Sfenoidin lateral duvarı. Karotis arter ve optik sinir
 nld	Dikkat! Nazolakrimal kanal önde. Antrostomiyi öne uzatmayın.
 mt_bite	Bu orta konka. Koruyun, lateralinden ısırın.
 mt_press	Orta konkaya nazik olun, kırılıp lateralize olabilir.
+tool_JCurette	J küret. Hücre duvarının arkasına takıp öne doğru çekin.
+cell_open	Etmoid hücresi açıldı. İçindeki mukoza ve arkadaki hücre duvarları görünüyor.

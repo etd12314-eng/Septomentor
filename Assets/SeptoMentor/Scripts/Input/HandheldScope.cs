@@ -42,6 +42,32 @@ namespace SeptoMentor
         float _touchSince = -1, _nextBuzz, _nextHint;
         public static readonly Quaternion HeadToAnatomy = Quaternion.Euler(0, 180f, 0);   // (right, sup, ant) -> (left, sup, post)
 
+        [Tooltip("Keeps the endoscope tip in the nasal cavity (it slides along the walls; no entering closed sinuses). FESS.")]
+        public bool collide;
+
+        /// <summary>
+        /// Motion scaling inside the nose: past the nostril, positions are scaled about it by this factor (like a fulcrum),
+        /// so a hand movement makes a smaller, steadier movement of the scope or instrument tip.
+        /// </summary>
+        public static float NoseScale = 0.7f;
+
+        /// <summary>Head-frame point scaled about the nearer nostril once it is inside the nose (continuous at the nostril).</summary>
+        public static Vector3 ScaleInNose(Vector3 h)
+        {
+            Vector3 nr = OperatingRoom.Nostril(true), nl = OperatingRoom.Nostril(false);
+            var n = (h - nr).sqrMagnitude < (h - nl).sqrMagnitude ? nr : nl;
+            var rel = h - n;
+            float w = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(-rel.z / 0.015f));   // head frame +Z = anterior: inside is -Z
+            return n + rel * Mathf.Lerp(1f, NoseScale, w);
+        }
+
+        /// <summary>Pushes a patient-local point (m) out of the tissue given by <paramref name="depth"/> (work frame mm).</summary>
+        public static Vector3 Collide(Vector3 local, Func<Vector3, float> depth, float clearanceMm)
+        {
+            var mm = NasalAnatomy.PushOut(NasalAnatomy.ToWork(local * 1000f), depth, clearanceMm);
+            return NasalAnatomy.FromWork(mm) * 0.001f;
+        }
+
         /// <summary>
         /// Maps a pose in the operating room into the patient's local (anatomy) space. Phantom-aligned anatomy shares
         /// the OR head's geometry (1:1); otherwise the right nostril is pinned to the start of the scope path.
@@ -52,7 +78,7 @@ namespace SeptoMentor
             if (room == null || room.PatientHead == null || patient == null || patient.AnatomyRoot == null) return false;
             var ph = room.PatientHead;
             var tipH = ph.InverseTransformPoint(world);
-            local = patient.PhantomAligned ? HeadToAnatomy * tipH : HeadToAnatomy * (tipH - OperatingRoom.Nostril(true)) + patient.pathStart;
+            local = patient.PhantomAligned ? HeadToAnatomy * ScaleInNose(tipH) : HeadToAnatomy * (tipH - OperatingRoom.Nostril(true)) + patient.pathStart;
             localRot = HeadToAnatomy * (Quaternion.Inverse(ph.rotation) * rot);
             return true;
         }
@@ -135,7 +161,8 @@ namespace SeptoMentor
             if (!_sideKnown) { provider.externalPose = false; return; }
 
             // Phantom-aligned anatomy shares the head's geometry: map 1:1. Otherwise pin the nostril to the path start.
-            var local = patient.PhantomAligned ? HeadToAnatomy * tipH : HeadToAnatomy * (tipH - _nostril) + patient.pathStart;
+            var local = patient.PhantomAligned ? HeadToAnatomy * ScaleInNose(tipH) : HeadToAnatomy * (tipH - _nostril) + patient.pathStart;
+            if (collide && patient.PhantomAligned) local = Collide(local, NasalAnatomy.ScopeDepth, 0.8f);
             provider.externalPose = true;
             provider.externalPosition = local;
             provider.externalRotation = HeadToAnatomy * rotH;

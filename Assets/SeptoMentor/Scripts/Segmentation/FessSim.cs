@@ -12,8 +12,12 @@ namespace SeptoMentor
     ///      (frontal recess): touch them with the ball probe, or hold the endoscope on them (close, centred, in view).
     ///   2. Uncinectomy - sickle knife incision, then the backbiter / Blakesley / microdebrider take the uncinate.
     ///   3. Maxillary antrostomy - widen the natural ostium (backbiter, Blakesley, microdebrider).
-    ///   4. Anterior ethmoidectomy - open the bulla; agger nasi (up-biting Blakesley) clears the frontal recess.
+    ///   4. Anterior ethmoidectomy - open the bulla and the anterior ethmoid cells one by one (Blakesley, J curette,
+    ///      shaver); agger nasi (up-biting Blakesley, curette) clears the frontal recess.
     ///   5. Posterior ethmoidectomy - through the basal lamella into the posterior cells.
+    /// Each ethmoid cell is its own chunk (Fess_X_Cells_id): opening one shows its mucosa-lined inside and the septa of
+    /// the cells behind it. Sinus linings are hidden until their sinus has been opened (the scope sees the nose only), and
+    /// the endoscope cannot pass into a sinus or cell that is still closed (NasalAnatomy.ScopeDepth / IsOpened).
     ///   6. Sphenoidotomy - widen the sphenoid ostium.
     /// The removable lamellae are pre-cut chunks (Fess_[L|R]_Group_k); a bite or the shaver takes the chunk at the tip.
     /// Danger zones (lamina papyracea, skull base, anterior ethmoidal artery, lateral sphenoid wall, nasolacrimal duct,
@@ -38,13 +42,15 @@ namespace SeptoMentor
 
         VirtualPatient Patient => provider != null ? provider.patient : null;
 
-        class Chunk { public GameObject go; public Vector3[] mm; public Bounds bounds; }   // vertices in the side's work frame, mm
+        class Chunk { public GameObject go; public Vector3[] mm; public Bounds bounds; public int cell; }   // vertices in the side's work frame, mm
         class Group { public readonly List<Chunk> chunks = new List<Chunk>(); public int Removed => chunks.FindAll(c => !c.go.activeSelf).Count; }
 
         // [side 0 = left (operated frame), 1 = right][group name]
         readonly Dictionary<string, Group>[] _groups = { new Dictionary<string, Group>(), new Dictionary<string, Group>() };
         readonly bool[,] _found = new bool[2, NasalAnatomy.OstiumTargets.Length];
         readonly Dictionary<string, float> _said = new Dictionary<string, float>();
+        readonly Dictionary<string, GameObject>[] _sinus = { new Dictionary<string, GameObject>(), new Dictionary<string, GameObject>() };
+        readonly HashSet<int>[] _openCells = { new HashSet<int>(), new HashSet<int>() };
         bool _searched, _incised;
         float _nextShave, _seenSince = -1;
         int _seenTarget = -1;
@@ -57,7 +63,12 @@ namespace SeptoMentor
             _searched = true;
             foreach (Transform t in Patient.AnatomyRoot)
             {
-                // Fess_L_Bulla_2
+                foreach (var sn in new[] { "MaxillarySinus", "SphenoidSinus", "FrontalSinus" })
+                {
+                    if (t.name == sn) _sinus[0][sn] = t.gameObject;
+                    else if (t.name == "Right_" + sn) _sinus[1][sn] = t.gameObject;
+                }
+                // Fess_L_Bulla_2, Fess_R_Cells_512347
                 var parts = t.name.Split('_');
                 if (parts.Length != 4 || parts[0] != "Fess") continue;
                 int side = parts[1] == "R" ? 1 : 0;
@@ -73,9 +84,12 @@ namespace SeptoMentor
                     mm[i] = w;
                     if (i == 0) b = new Bounds(w, Vector3.zero); else b.Encapsulate(w);
                 }
-                g.chunks.Add(new Chunk { go = t.gameObject, mm = mm, bounds = b });
+                int.TryParse(parts[3], out int cell);
+                g.chunks.Add(new Chunk { go = t.gameObject, mm = mm, bounds = b, cell = parts[2] == "Cells" ? cell : -1 });
             }
             Available = _groups[0].Count > 0;
+            if (Available) NasalAnatomy.IsOpened = IsOpened;
+            ShowSinuses();
             Debug.Log(Available ? $"[SeptoMentor] FESS: {_groups[0].Count} removable groups per side." : "[SeptoMentor] FESS off: no sinus pieces in the anatomy.");
             UpdateProgress();
             return Available;
@@ -86,7 +100,9 @@ namespace SeptoMentor
         {
             if (!Ready()) return;
             foreach (var side in _groups) foreach (var g in side.Values) foreach (var c in g.chunks) c.go.SetActive(true);
+            foreach (var o in _openCells) o.Clear();
             Array.Clear(_found, 0, _found.Length);
+            ShowSinuses();
             _incised = false;
             Current = Step.FindOstia;
             Warnings = 0;
@@ -109,7 +125,7 @@ namespace SeptoMentor
                 case Step.FindOstia: Say("fess_find", "Find the ostia: maxillary (behind the uncinate), ethmoid bulla, sphenoid (medial to the superior turbinate), frontal (frontal recess). Probe them or hold the scope on them.", Severity.Info, 0f, true); break;
                 case Step.Uncinectomy: Say("fess_unc", "Uncinectomy: incise the uncinate with the sickle knife, then take it with the backbiter or Blakesley.", Severity.Info, 0f, true); break;
                 case Step.Antrostomy: Say("fess_antro", "Maxillary antrostomy: widen the natural ostium backward and down - not forward (nasolacrimal duct).", Severity.Info, 0f, true); break;
-                case Step.AnteriorEthmoid: Say("fess_ant_eth", "Anterior ethmoidectomy: open the bulla; the up-biting Blakesley takes the agger nasi to clear the frontal recess.", Severity.Info, 0f, true); break;
+                case Step.AnteriorEthmoid: Say("fess_ant_eth", "Anterior ethmoidectomy: open the bulla, then the anterior ethmoid cells one by one with the Blakesley or the J curette; the up-biting Blakesley takes the agger nasi to clear the frontal recess.", Severity.Info, 0f, true); break;
                 case Step.PosteriorEthmoid: Say("fess_post_eth", "Posterior ethmoidectomy: through the basal lamella, inferomedially; stay below the skull base, medial to the orbit.", Severity.Info, 0f, true); break;
                 case Step.Sphenoidotomy: Say("fess_sphen", "Sphenoidotomy: widen the sphenoid ostium medially and down - never laterally (carotid, optic nerve).", Severity.Info, 0f, true); break;
                 case Step.Done: Say("fess_done", "Sinus surgery complete. Check haemostasis and the middle turbinate position.", Severity.Info, 0f, true); break;
@@ -127,8 +143,8 @@ namespace SeptoMentor
                     case Step.FindOstia: return FoundCount(s) / (float)NasalAnatomy.OstiumTargets.Length;
                     case Step.Uncinectomy: return Fraction(s, "Uncinate");
                     case Step.Antrostomy: return Fraction(s, "Antrostomy");
-                    case Step.AnteriorEthmoid: return 0.5f * (Fraction(s, "Bulla") + Fraction(s, "AggerNasi"));
-                    case Step.PosteriorEthmoid: return 0.5f * (Fraction(s, "BasalLamella") + Fraction(s, "PostEthmoid"));
+                    case Step.AnteriorEthmoid: return Mathf.Clamp01((Fraction(s, "Bulla") + Fraction(s, "AggerNasi") + CellFraction(s, true) / AntCells) / 3f);
+                    case Step.PosteriorEthmoid: return Mathf.Clamp01((Fraction(s, "BasalLamella") + CellFraction(s, false) / PostCells) / 2f);
                     case Step.Sphenoidotomy: return Fraction(s, "Sphenoid");
                 }
                 return 1;
@@ -148,13 +164,68 @@ namespace SeptoMentor
 
         float Fraction(int s, string g) => _groups[s].TryGetValue(g, out var gr) && gr.chunks.Count > 0 ? gr.Removed / (float)gr.chunks.Count : 0f;
 
+        /// <summary>Share of opened ethmoid cells in front of (anterior) or behind the basal lamella.</summary>
+        float CellFraction(int s, bool anterior)
+        {
+            if (!_groups[s].TryGetValue("Cells", out var g)) return 0f;
+            int n = 0, open = 0;
+            foreach (var c in g.chunks)
+            {
+                if (c.bounds.center.z < -17f != anterior) continue;
+                n++;
+                if (!c.go.activeSelf) open++;
+            }
+            return n > 0 ? open / (float)n : 0f;
+        }
+
+        // Cells to open for a step (not every outlying cell: the ones that matter, roughly).
+        const float AntCells = 0.35f, PostCells = 0.35f;
+
+        int OpenCells(int s, bool anterior)
+        {
+            if (!_groups[s].TryGetValue("Cells", out var g)) return 0;
+            int open = 0;
+            foreach (var c in g.chunks) if (c.bounds.center.z < -17f == anterior && !c.go.activeSelf) open++;
+            return open;
+        }
+
+        /// <summary>Sinus linings appear once the sinus has been opened (until then the scope sees the nose only).</summary>
+        void ShowSinuses()
+        {
+            for (int s = 0; s < 2; s++)
+            {
+                if (_sinus[s].TryGetValue("MaxillarySinus", out var m)) m.SetActive(Fraction(s, "Antrostomy") > 0f);
+                if (_sinus[s].TryGetValue("SphenoidSinus", out var sp)) sp.SetActive(Fraction(s, "Sphenoid") > 0f);
+                if (_sinus[s].TryGetValue("FrontalSinus", out var fr)) fr.SetActive(Fraction(s, "AggerNasi") > 0f);
+            }
+        }
+
+        /// <summary>Whether the point (side work frame, mm) lies in a space the resident has opened.</summary>
+        bool IsOpened(Vector3 q, bool right)
+        {
+            int s = right ? 1 : 0;
+            foreach (var g in _groups[s].Values)
+                foreach (var c in g.chunks)
+                    if (!c.go.activeSelf && c.bounds.SqrDistance(q) < 2.25f) return true;
+            if (q.x < -14f && q.x > -26.5f && q.y > 0.5f && q.y < 21.5f && q.z > -51.5f && q.z < -2.5f && _openCells[s].Contains(NasalAnatomy.CellId(q))) return true;
+            if (Fraction(s, "Antrostomy") > 0f && Inside(q, new Vector3(-34.5f, -8.5f, -40f), new Vector3(11.5f, 13.5f, 17f))) return true;
+            if (Fraction(s, "Sphenoid") > 0f && Inside(q, new Vector3(-7f, 17f, 13f), new Vector3(6f, 6f, 9f))) return true;
+            return false;
+        }
+
+        static bool Inside(Vector3 q, Vector3 c, Vector3 r)
+        {
+            var d = new Vector3((q.x - c.x) / r.x, (q.y - c.y) / r.y, (q.z - c.z) / r.z);
+            return d.sqrMagnitude < 1f;
+        }
+
         void UpdateProgress()
         {
             int s = RightSide ? 1 : 0;
             string side = RightSide ? "R" : "L";
             Progress = $"FESS {side}: {StepName(Current)}  |  ostia {FoundCount(s)}/{NasalAnatomy.OstiumTargets.Length}" +
                        $"  unc {Pct(s, "Uncinate")}  antro {Pct(s, "Antrostomy")}  bulla {Pct(s, "Bulla")}  agger {Pct(s, "AggerNasi")}" +
-                       $"  post {Pct(s, "PostEthmoid")}  sphen {Pct(s, "Sphenoid")}";
+                       $"  cells {OpenCells(s, true)}+{OpenCells(s, false)}  lamella {Pct(s, "BasalLamella")}  sphen {Pct(s, "Sphenoid")}";
         }
 
         string Pct(int s, string g) => Mathf.RoundToInt(100f * Fraction(s, g)) + "%";
@@ -255,7 +326,9 @@ namespace SeptoMentor
                 for (int i = 0; i < NasalAnatomy.OstiumTargets.Length; i++)
                     if ((q - NasalAnatomy.OstiumTargets[i].at).magnitude < NasalAnatomy.OstiumTargets[i].radius) Found(s, i, "probe");
 
-            bool cutting = InstrumentModels.Bites(tool) && triggerDown || tool == Tool.Microdebrider && trigger;
+            // Bites and the shaver remove what is at the tip; the J curette breaks a cell wall when pulled (trigger) or pressed in.
+            bool cutting = (InstrumentModels.Bites(tool) || tool == Tool.JCurette) && triggerDown || tool == Tool.Microdebrider && trigger ||
+                           tool == Tool.JCurette && depth > 0.7f && Time.time >= _nextShave;
             if (tool == Tool.SickleKnife && depth > 0.2f && Near(s, "Uncinate", q, 1.2f) != null && !_incised)
             {
                 _incised = true;
@@ -274,12 +347,13 @@ namespace SeptoMentor
 
         void Cut(Tool tool, int s, Vector3 q, float depth, Wall wall, XRNode hand)
         {
-            if (tool == Tool.Microdebrider && Time.time < _nextShave) return;
-            _nextShave = Time.time + 0.25f;
+            if ((tool == Tool.Microdebrider || tool == Tool.JCurette) && Time.time < _nextShave) return;
+            _nextShave = Time.time + (tool == Tool.JCurette ? 0.4f : 0.25f);
             Chunk best = null; string bestGroup = null; float bestD = tool == Tool.Microdebrider ? 1.6f : 2.2f;
             foreach (var kv in _groups[s])
             {
                 if (kv.Key == "Uncinate" && !_incised && tool != Tool.Backbiter && tool != Tool.Microdebrider) continue;   // needs the incision first
+                if (tool == Tool.JCurette && (kv.Key == "Antrostomy" || kv.Key == "Sphenoid")) continue;                  // the curette takes thin cell walls only
                 foreach (var c in kv.Value.chunks)
                 {
                     if (!c.go.activeSelf || c.bounds.SqrDistance(q) > bestD * bestD) continue;
@@ -295,9 +369,16 @@ namespace SeptoMentor
                 return;
             }
             best.go.SetActive(false);
-            Haptics.Pulse(hand, 0.9f, 0.06f);
-            Haptics.Pattern(hand, 2, 0.4f, 0.015f, 0.025f);
+            // Eggshell crack of a thin lamella, then the crunch.
+            Haptics.Pulse(hand, 0.9f, 0.05f);
+            Haptics.Pattern(hand, 3, 0.45f, 0.012f, 0.02f);
             if (bestGroup == "Uncinate") _incised = true;
+            if (best.cell >= 0)
+            {
+                _openCells[s].Add(best.cell);
+                if (_openCells[s].Count == 1) Say("cell_open", "Ethmoid cell opened: its mucosa-lined inside and the walls of the next cells are in view.", Severity.Info, 0f, true);
+            }
+            ShowSinuses();
             CheckSteps(s);
             UpdateProgress();
         }
@@ -308,9 +389,9 @@ namespace SeptoMentor
             { Say("done_unc", "Uncinectomy done: the infundibulum and the maxillary ostium are open to view.", Severity.Info, 0f, true); Advance(Step.Antrostomy); }
             if (Current == Step.Antrostomy && Fraction(s, "Antrostomy") >= 0.66f)
             { Say("done_antro", "Antrostomy done: look into the maxillary sinus with the angled scope.", Severity.Info, 0f, true); Advance(Step.AnteriorEthmoid); }
-            if (Current == Step.AnteriorEthmoid && Fraction(s, "Bulla") >= 0.75f && Fraction(s, "AggerNasi") >= 0.5f)
+            if (Current == Step.AnteriorEthmoid && Fraction(s, "Bulla") >= 0.75f && Fraction(s, "AggerNasi") >= 0.5f && CellFraction(s, true) >= AntCells)
             { Say("done_ant_eth", "Anterior ethmoid open, frontal recess clear.", Severity.Info, 0f, true); Advance(Step.PosteriorEthmoid); }
-            if (Current == Step.PosteriorEthmoid && Fraction(s, "BasalLamella") >= 0.5f && Fraction(s, "PostEthmoid") >= 0.5f)
+            if (Current == Step.PosteriorEthmoid && Fraction(s, "BasalLamella") >= 0.5f && CellFraction(s, false) >= PostCells)
             { Say("done_post_eth", "Posterior ethmoid cells open.", Severity.Info, 0f, true); Advance(Step.Sphenoidotomy); }
             if (Current == Step.Sphenoidotomy && Fraction(s, "Sphenoid") >= 0.5f)
                 Advance(Step.Done);

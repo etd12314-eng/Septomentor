@@ -31,7 +31,7 @@ namespace SeptoMentor
 
         public static readonly Tool[] SeptoplastyTray = { Tool.Scalpel, Tool.Freer, Tool.ThroughCut, Tool.Suction };
         public static readonly Tool[] FessTray =
-            { Tool.SickleKnife, Tool.BallProbe, Tool.Freer, Tool.Blakesley, Tool.BlakesleyUp, Tool.Backbiter, Tool.Microdebrider, Tool.CurvedSuction };
+            { Tool.SickleKnife, Tool.BallProbe, Tool.Freer, Tool.Blakesley, Tool.BlakesleyUp, Tool.JCurette, Tool.Backbiter, Tool.Microdebrider, Tool.CurvedSuction };
 
         public Procedure Procedure { get; private set; } = Procedure.Septoplasty;
         public Tool[] Tools { get; private set; } = SeptoplastyTray;
@@ -152,6 +152,7 @@ namespace SeptoMentor
                 case Tool.Backbiter: return ": trigger = bite backward. Takes the uncinate and widens the antrostomy forward.";
                 case Tool.Microdebrider: return ": trigger = run. Shaves soft tissue and thin bone; keep the window in view.";
                 case Tool.CurvedSuction: return ": trigger = suction. Reaches round into the maxillary sinus and the frontal recess.";
+                case Tool.JCurette: return ": hook it behind a cell wall and pull forward (trigger) - it cracks the ethmoid cells open.";
             }
             return "";
         }
@@ -218,6 +219,8 @@ namespace SeptoMentor
             vi.running = trigNow;
             if (HandheldScope.ToAnatomy(room, patient, tip, wRot, out var local, out var localRot))
             {
+                // FESS: the tip may press ~1 mm into a wall (to bite it) but slides along it instead of passing through.
+                if (Procedure == Procedure.Fess && patient.PhantomAligned) local = HandheldScope.Collide(local, NasalAnatomy.InstrumentDepth, -1.2f);
                 vi.SetExternalPose(local, localRot);
                 if (Procedure == Procedure.Fess) { if (fess != null) fess.Tick(Held, local, localRot, trigNow, trigDown, hand); }
                 else if (sim != null) sim.Step(InstrumentModels.LabelOf(Held), local, trigNow, trigDown, hand);

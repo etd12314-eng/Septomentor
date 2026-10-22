@@ -148,7 +148,7 @@ namespace SeptoMentor
         {
             Septum, Lateral, Floor, Roof, Vestibule, Pharynx, InfTurb, MidTurb, Torus, SupTurb, Uncinate, Adenoid,
             Agger, Bulla, BasalLam,                                          // FESS tissue (bony lamellae with mucosa)
-            MaxSinus, BullaCell, AggerCell, PostEth, Sphenoid, Frontal, Ostia,  // FESS air spaces and their openings
+            MaxSinus, BullaCell, AggerCell, EthCells, Sphenoid, Frontal, Ostia,  // FESS air spaces and their openings
             Count,
         }
 
@@ -226,15 +226,72 @@ namespace SeptoMentor
             return SMin(edge, web, 0.8f);
         }
 
+        /// <summary>Sphenoethmoidal recess: part of the nose, medial to the superior turbinate, in front of the sphenoid ostium.</summary>
+        static float Recess(float l, float s, float p) => Ell(l, s, p, -5f, 14f, -1.5f, 3f, 5f, 3.5f);
+
+        // ---- ethmoid labyrinth: a honeycomb of air cells with thin bony septa (Voronoi cells of a jittered seed grid)
+        const float CellSpacing = 4.8f, CellJitter = 0.35f, SeptumHalf = 0.4f;
+        static readonly Vector3 CellOrigin = new Vector3(-26f, 0f, -52f);
+
+        static float Hash01(int i, int j, int k, int salt)
+        {
+            float x = Mathf.Sin(i * 127.1f + j * 311.7f + k * 74.7f + salt * 19.19f) * 43758.5453f;
+            return x - Mathf.Floor(x);
+        }
+
+        static Vector3 CellSeed(int i, int j, int k) =>
+            CellOrigin + CellSpacing * (new Vector3(i, j, k) + Vector3.one * 0.5f) +
+            CellSpacing * CellJitter * (new Vector3(Hash01(i, j, k, 1), Hash01(i, j, k, 2), Hash01(i, j, k, 3)) * 2f - Vector3.one);
+
+        /// <summary>Distances to the nearest two cell seeds and the nearest cell's id.</summary>
+        static void NearestCells(Vector3 q, out float d1, out float d2, out int id)
+        {
+            var g = (q - CellOrigin) / CellSpacing;
+            int gi = Mathf.FloorToInt(g.x), gj = Mathf.FloorToInt(g.y), gk = Mathf.FloorToInt(g.z);
+            d1 = d2 = 1e9f; id = 0;
+            for (int i = gi - 1; i <= gi + 1; i++)
+            for (int j = gj - 1; j <= gj + 1; j++)
+            for (int k = gk - 1; k <= gk + 1; k++)
+            {
+                float d = (q - CellSeed(i, j, k)).magnitude;
+                if (d < d1) { d2 = d1; d1 = d; id = (i + 50) * 10000 + (j + 50) * 100 + (k + 50); }
+                else if (d < d2) d2 = d;
+            }
+        }
+
+        /// <summary>The id of the ethmoid cell nearest to <paramref name="q"/> (side work frame, mm).</summary>
+        public static int CellId(Vector3 q) { NearestCells(q, out _, out _, out int id); return id; }
+
+        static float Lat0(float s, float p)
+        {
+            float meatus = Window(s, -8.5f, 14f, 1.8f) * Window(p, -56f, -14f, 3f);
+            return -15f - 4.5f * meatus + Mathf.Max(0, s - 15f) * 0.45f * (1f - meatus);
+        }
+
+        /// <summary>
+        /// Ethmoid cells (negative inside a cell): the labyrinth lateral to the middle meatus and above it, between the
+        /// lamina papyracea (L -25.5) and the skull base, kept clear of the bulla, agger nasi, basal lamella (except as a
+        /// wall), the openings and the other sinuses. c must already hold those walls.
+        /// </summary>
+        static float EthCells(float l, float s, float p, float[] c)
+        {
+            if (l < -26.5f || l > -13f || s < 0.5f || s > 21.5f || p < -51.5f || p > -2.5f) return 50f;
+            float r = Mathf.Max(Mathf.Max(l - (Lat0(s, p) - 1.1f), -25.5f - l), Mathf.Max(Mathf.Max(s - 21f, 1f - s), Mathf.Max(-51f - p, p + 3f)));
+            r = Mathf.Max(r, Mathf.Max(0.9f - c[(int)Wall.Bulla], 0.9f - c[(int)Wall.Agger]));
+            r = Mathf.Max(r, Mathf.Max(1.1f - Mathf.Abs(p + 17f), 0.9f - c[(int)Wall.Ostia]));
+            r = Mathf.Max(r, Mathf.Max(0.9f - c[(int)Wall.MaxSinus], Mathf.Max(0.9f - c[(int)Wall.Frontal], 0.9f - c[(int)Wall.Sphenoid])));
+            if (r > 3f) return r;
+            NearestCells(new Vector3(l, s, p), out float d1, out float d2, out _);
+            return Mathf.Max(r, SeptumHalf - (d2 - d1) * 0.5f);
+        }
+
         static float Ostia(float l, float s, float p)
         {
             var q = new Vector3(l, s, p);
             float o = Capsule(q, new Vector3(-18.6f, -3.2f, -39f), new Vector3(-24.5f, -4f, -40f), 1.5f, 1.5f);          // maxillary natural ostium
             o = Mathf.Min(o, Capsule(q, new Vector3(-18.5f, -6.6f, -30.5f), new Vector3(-24f, -7f, -31f), 0.9f, 0.9f));   // accessory ostium
             o = Mathf.Min(o, Capsule(q, new Vector3(-17.4f, 10.6f, -25.6f), new Vector3(-19.4f, 9.2f, -27.6f), 1f, 1f));  // bulla ostium
-            o = Mathf.Min(o, Capsule(q, new Vector3(-14.4f, 11.5f, -9f), new Vector3(-17.5f, 12f, -9f), 1f, 1f));          // posterior ethmoid
-            o = Mathf.Min(o, SMin(Ell(l, s, p, -5f, 14f, -1.5f, 3f, 5f, 3.5f),
-                                  Capsule(q, new Vector3(-5f, 14f, 0.5f), new Vector3(-6f, 15f, 5.5f), 1.4f, 1.4f), 1f));     // sphenoethmoidal recess, sphenoid ostium
+            o = Mathf.Min(o, SMin(Recess(l, s, p), Capsule(q, new Vector3(-5f, 14f, 0.5f), new Vector3(-6f, 15f, 5.5f), 1.4f, 1.4f), 1f));   // sphenoid ostium
             if (s > 10f && p < -38f && l < -8f)
             {
                 float fr = float.MaxValue;
@@ -268,8 +325,7 @@ namespace SeptoMentor
             // Lateral wall: inferior meatus at -15; the middle meatus recessed laterally (uncinate, bulla and the sinus
             // openings stand in it); narrowing toward the olfactory cleft above. In front it converges on the septum into
             // the internal nasal valve (limen nasi): a slit narrow at the top, wider along the floor.
-            float meatus = Window(s, -8.5f, 14f, 1.8f) * Window(p, -56f, -14f, 3f);
-            float lat0 = -15f - 4.5f * meatus + Mathf.Max(0, s - 15f) * 0.45f * (1f - meatus);
+            float lat0 = Lat0(s, p);
             float valveW = Mathf.Clamp(9f - 0.3f * (s + 26f), 1f, 12f) * (1f - Mathf.Clamp01((-77f - p) / 6f));
             float toValve = Mathf.Pow(Mathf.Clamp01((-56f - p) / 20f), 1.5f);
             c[(int)Wall.Lateral] = Mathf.Lerp(lat0, face - valveW, toValve) - l;
@@ -297,10 +353,10 @@ namespace SeptoMentor
             c[(int)Wall.MaxSinus] = Ell(l, s, p, -34.5f, -8.5f, -40f, 11.5f, 13.5f, 17f);
             c[(int)Wall.BullaCell] = Ell(l, s, p, -20.3f, 6f, -30.5f, 3.2f, 4.4f, 4.7f);
             c[(int)Wall.AggerCell] = Ell(l, s, p, -18.6f, 15.2f, -52.5f, 2.1f, 2.9f, 3f);
-            c[(int)Wall.PostEth] = SMin(Ell(l, s, p, -20f, 13f, -9f, 3.6f, 4.4f, 5f), Ell(l, s, p, -20.5f, 5.5f, -7f, 3.2f, 3.4f, 4f), 1f);
             c[(int)Wall.Sphenoid] = SMax(Ell(l, s, p, -7f, 17f, 13f, 6f, 6f, 9f), -Ell(l, s, p, -13.2f, 14f, 16f, 1.6f, 2f, 6f), 1f);   // carotid prominence
             c[(int)Wall.Frontal] = Ell(l, s, p, -13f, 42f, -70f, 11f, 11f, 6.5f);
             c[(int)Wall.Ostia] = Ostia(l, s, p);
+            c[(int)Wall.EthCells] = EthCells(l, s, p, c);
         }
 
         /// <summary>
@@ -319,10 +375,11 @@ namespace SeptoMentor
         /// Signed distance to the airway wall of both cavities, mm: negative in air, positive in tissue.
         /// <paramref name="c"/> gets the wall distances of the nearer cavity (<paramref name="other"/>: the right one, mirrored).
         /// </summary>
-        static float Air(float l, float s, float p, float[] c, float[] c2, out bool other)
+        /// <param name="mode">0: everything; 1: the nasal cavity alone; 2: the nasal cavity with the sinus openings.</param>
+        static float Air(float l, float s, float p, float[] c, float[] c2, out bool other, int mode = 0)
         {
             // Each side's walls lie on its own side of the septum (the shared nasopharynx is symmetric).
-            float a = l < 4f ? Cavity(l, s, p, c, 1f) : 1e3f, b = l > -4f ? Cavity(-l, s, p, c2, -1f) : 1e3f;
+            float a = l < 4f ? Cavity(l, s, p, c, 1f, mode) : 1e3f, b = l > -4f ? Cavity(-l, s, p, c2, -1f, mode) : 1e3f;
             other = b < a;
             if (other) Array.Copy(c2, c, c.Length);
             return Mathf.Min(a, b) - 0.2f * (Noise(l / 1.4f, s / 1.4f, p / 1.4f) - 0.5f);   // mucosal micro-relief
@@ -333,9 +390,11 @@ namespace SeptoMentor
             (Wall.InfTurb, 1.5f), (Wall.MidTurb, 1.2f), (Wall.SupTurb, 1f), (Wall.Uncinate, 0.6f), (Wall.Agger, 1f),
             (Wall.Bulla, 1.2f), (Wall.BasalLam, 0.8f), (Wall.Torus, 2f), (Wall.Adenoid, 2f),
         };
-        static readonly Wall[] AirCells = { Wall.BullaCell, Wall.AggerCell, Wall.PostEth, Wall.MaxSinus, Wall.Sphenoid, Wall.Frontal };
+        static readonly Wall[] AirCells = { Wall.BullaCell, Wall.AggerCell, Wall.EthCells, Wall.MaxSinus, Wall.Sphenoid, Wall.Frontal };
 
-        static float Cavity(float l, float s, float p, float[] c, float side)
+        /// <param name="mode">0: everything; 1: the nasal cavity alone (closed sinuses, cells and their narrow openings
+        /// count as bone; the sphenoethmoidal recess is nose); 2: the nasal cavity with the openings.</param>
+        static float Cavity(float l, float s, float p, float[] c, float side, int mode = 0)
         {
             Components(l, s, p, c, side);
             float cav = SMax(SMax(c[(int)Wall.Septum], c[(int)Wall.Lateral], 2), SMax(c[(int)Wall.Floor], c[(int)Wall.Roof], 2), 2);
@@ -344,7 +403,9 @@ namespace SeptoMentor
             a = SMin(a, Ell(l, s, p, -15.6f, -24.5f, -50f, 1.0f, 1.4f, 2.4f), 0.6f);                 // Hasner's valve
             a = SMin(a, Ell(Mathf.Abs(l), s, p, 12.2f, -9.5f, 15f, 1.5f, 2.6f, 1.8f), 0.8f);         // Eustachian orifices
             foreach (var t in TissueWalls) a = SMax(a, -c[(int)t.wall], t.k);
+            if (mode == 1) return SMin(a, Recess(l, s, p), 0.6f);
             a = SMin(a, c[(int)Wall.Ostia], 0.6f);
+            if (mode == 2) return a;
             foreach (var w in AirCells) a = Mathf.Min(a, c[(int)w]);   // closed cells inside bone (thin walls kept)
             return a;
         }
@@ -364,6 +425,43 @@ namespace SeptoMentor
             for (int i = 1; i < (int)Wall.Count; i++) if (Mathf.Abs(Scratch[i]) < Mathf.Abs(Scratch[best])) best = i;
             wall = (Wall)best;
             return d;
+        }
+
+        /// <summary>Set by FessSim: whether a point (side work frame mm, right side?) lies in a sinus or cell already opened.</summary>
+        public static Func<Vector3, bool, bool> IsOpened;
+
+        /// <summary>
+        /// Depth for the endoscope (mm, work frame): the nasal cavity only - the scope cannot pass into a sinus or a cell
+        /// until it has been opened; <paramref name="opened"/> says where (side work frame) the resident has opened it.
+        /// </summary>
+        public static float ScopeDepth(Vector3 mm) => OpenedDepth(mm, 1);
+
+        /// <summary>Depth for an instrument: like the scope's, but the narrow openings (ostia, frontal recess) are passable.</summary>
+        public static float InstrumentDepth(Vector3 mm) => OpenedDepth(mm, 2);
+
+        static float OpenedDepth(Vector3 mm, int mode)
+        {
+            float d = Air(mm.x, mm.y, mm.z, Scratch, Scratch2, out bool other, mode);
+            if (d <= 0f || IsOpened == null) return d;
+            var q = new Vector3(other ? -mm.x : mm.x, mm.y, mm.z);
+            return IsOpened(q, other) ? Mathf.Min(d, Air(mm.x, mm.y, mm.z, Scratch, Scratch2, out _)) : d;
+        }
+
+        /// <summary>Moves <paramref name="mm"/> out of the tissue until it is <paramref name="clearance"/> mm inside the air.</summary>
+        public static Vector3 PushOut(Vector3 mm, Func<Vector3, float> depth, float clearance)
+        {
+            for (int it = 0; it < 3; it++)
+            {
+                float d = depth(mm);
+                if (d <= -clearance) break;
+                const float h = 0.25f;
+                var g = new Vector3(depth(mm + Vector3.right * h) - depth(mm - Vector3.right * h),
+                                    depth(mm + Vector3.up * h) - depth(mm - Vector3.up * h),
+                                    depth(mm + Vector3.forward * h) - depth(mm - Vector3.forward * h));
+                if (g.sqrMagnitude < 1e-8f) break;
+                mm -= g.normalized * (d + clearance);
+            }
+            return mm;
         }
 
         // ---------------------------------------------------------------- build
@@ -410,6 +508,13 @@ namespace SeptoMentor
                 Piece pc;
                 var q = new Vector3(other ? -m.x : m.x, m.y, m.z);   // this side's work frame
                 string fess = FessGroup((Wall)best, q);
+                if (fess == null && (Wall)best == Wall.Lateral && q.y > 1.5f && q.y < 21f && q.z > -51f && q.z < -3f)
+                {
+                    // The meatal wall in front of an ethmoid cell opens with it.
+                    var inner = q + new Vector3(-1.6f, 0, 0);
+                    Components(inner.x, inner.y, inner.z, buf, other ? -1f : 1f);
+                    if (buf[(int)Wall.EthCells] < 0f) fess = "Cells_" + CellId(inner);
+                }
                 if (fess != null)
                     pc = Get("Fess_" + (other ? "R_" : "L_") + fess, Structure.SinonasalBone, Mucosa * 0.97f);
                 else if (SinusPiece((Wall)best) is string sinus)
@@ -499,10 +604,9 @@ namespace SeptoMentor
                 case Wall.Agger: case Wall.AggerCell: return "AggerNasi_" + (q.z < -52.5f ? 0 : 1);
                 case Wall.Bulla: case Wall.BullaCell: return "Bulla_" + ((q.y > 6f ? 0 : 2) + (q.z > -30.5f ? 1 : 0));
                 case Wall.BasalLam: return "BasalLamella_" + (q.y > 10f ? 0 : 1);
-                case Wall.PostEth: return q.z < -9f ? "PostEthmoid_" + (q.y > 9f ? 0 : 1) : null;
+                case Wall.EthCells: return "Cells_" + CellId(q);
             }
             if (w == Wall.Ostia && (q - new Vector3(-18.4f, 9.9f, -26.6f)).sqrMagnitude < 9f) return "Bulla_1";
-            if (w == Wall.Ostia && (q - new Vector3(-16f, 11.7f, -9f)).sqrMagnitude < 9f) return "PostEthmoid_0";
             if ((w == Wall.Lateral || w == Wall.MaxSinus || w == Wall.Ostia) && (q - AntrostomyCentre).sqrMagnitude < 6.5f * 6.5f)
                 return "Antrostomy_" + (q.z < -41f ? 0 : q.z < -37f ? 1 : 2);
             if ((w == Wall.Sphenoid || w == Wall.Ostia || w == Wall.Pharynx || w == Wall.Roof || w == Wall.Lateral || w == Wall.SupTurb) &&
@@ -520,7 +624,6 @@ namespace SeptoMentor
                 case Wall.MaxSinus: return "MaxillarySinus";
                 case Wall.Sphenoid: return "SphenoidSinus";
                 case Wall.Frontal: return "FrontalSinus";
-                case Wall.PostEth: return "PosteriorEthmoidSinus";
                 case Wall.Ostia: return "SinusOstia";
             }
             return null;

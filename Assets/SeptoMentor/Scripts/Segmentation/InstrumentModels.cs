@@ -8,7 +8,7 @@ namespace SeptoMentor
     public enum Tool
     {
         None, Scalpel, Freer, ThroughCut, Suction,                                   // septoplasty
-        SickleKnife, BallProbe, Blakesley, BlakesleyUp, Backbiter, Microdebrider, CurvedSuction,   // FESS
+        SickleKnife, BallProbe, Blakesley, BlakesleyUp, Backbiter, Microdebrider, CurvedSuction, JCurette,   // FESS
     }
 
     /// <summary>
@@ -59,7 +59,7 @@ namespace SeptoMentor
             switch (t)
             {
                 case Tool.Scalpel: case Tool.SickleKnife: return Structure.Scalpel;
-                case Tool.Freer: case Tool.BallProbe: return Structure.FreerElevator;
+                case Tool.Freer: case Tool.BallProbe: case Tool.JCurette: return Structure.FreerElevator;
                 case Tool.ThroughCut: case Tool.Blakesley: case Tool.BlakesleyUp: case Tool.Backbiter: case Tool.Microdebrider: return Structure.ScissorsForceps;
                 case Tool.Suction: case Tool.CurvedSuction: return Structure.Suction;
             }
@@ -83,6 +83,7 @@ namespace SeptoMentor
                 case Tool.Backbiter: return "Backbiter";
                 case Tool.Microdebrider: return "Microdebrider";
                 case Tool.CurvedSuction: return "Curved suction";
+                case Tool.JCurette: return "J curette";
             }
             return "none";
         }
@@ -107,6 +108,7 @@ namespace SeptoMentor
                 case Tool.Backbiter: Backbiter(m, onPiece); break;
                 case Tool.Microdebrider: Microdebrider(m, onPiece); break;
                 case Tool.CurvedSuction: CurvedSuction(m, onPiece); break;
+                case Tool.JCurette: JCurette(m, onPiece); break;
             }
             return m;
         }
@@ -392,6 +394,34 @@ namespace SeptoMentor
             Add("Grip", grip, m.root, new Vector3(0, last.y, -95f) * MM, dir, Finish.Handle, on);
             var port = Get("FrazierPort", () => Lathe(new[] { 0f, -1.5f, -7f, -8f }, new[] { 0f, 1.6f, 0.9f, 0f }, 12, 1f, 0.4f));
             Add("ThumbPort", port, m.root, new Vector3(0, last.y, -95f) * MM + dir * new Vector3(0, 3.95f, -16f) * MM, dir, Finish.Dark, on);
+        }
+
+        /// <summary>
+        /// J curette: the shaft hooks round 180 deg (a "J") to a small sharp-rimmed cup facing back - pulled forward it
+        /// breaks ethmoid cell walls and clears the frontal recess. The tip (cup) is at the origin.
+        /// </summary>
+        static void JCurette(Model m, Action<GameObject, Finish> on)
+        {
+            m.length = 190f * MM; m.grip = 125f * MM;
+            var path = new List<Vector3> { new Vector3(0, -5.2f, -100f), new Vector3(0, -5.2f, -1.5f) };
+            for (int i = 1; i <= 10; i++)   // half turn up and back, radius 2.6 mm
+            {
+                float a = Mathf.PI * i / 10f;
+                path.Add(new Vector3(0, -2.6f - 2.6f * Mathf.Cos(a), -1.5f + 2.6f * Mathf.Sin(a)));
+            }
+            path.Add(new Vector3(0, 0, -2.6f));
+            var r = new float[path.Count];
+            for (int i = 0; i < r.Length; i++) r[i] = i == 0 ? 1.2f : i == 1 ? 0.9f : 0.55f;
+            var hook = Get("CuretteHook", () => Sweep(path.ToArray(), r, 10));
+            Add("Hook", hook, m.root, Vector3.zero, Quaternion.identity, Finish.Steel, on);
+            // The cup: a ring with a dark hollow, opening backward (toward the surgeon) at the end of the hook.
+            var ring = Get("CuretteRing", () => Torus(1.3f, 0.32f, 18, 8));
+            Add("Cup", ring, m.root, new Vector3(0, 0.6f, -3.2f) * MM, Quaternion.Euler(0, 0, 90) * Quaternion.Euler(0, 90, 0), Finish.Steel, on);
+            var hollow = Get("CuretteHollow", () => Lathe(new[] { 0.4f, 0f, -0.4f }, new[] { 0f, 1.1f, 0f }, 12));
+            Add("Hollow", hollow, m.root, new Vector3(0, 0.6f, -3.2f) * MM, Quaternion.identity, Finish.Dark, on);
+            var shaft = Get("CuretteShaft", () => Lathe(new[] { -100f, -110f }, new[] { 1.2f, 1.6f }, 12));
+            Add("Shaft", shaft, m.root, new Vector3(0, -5.2f, 0) * MM, Quaternion.identity, Finish.Steel, on);
+            RoundHandle(m, on, "CuretteHandle", -5.2f, -110f, 75f);
         }
 
         /// <summary>A flat blade along a path in the YZ plane: thin across X (<paramref name="thick"/>), <paramref name="half"/> wide in the plane.</summary>

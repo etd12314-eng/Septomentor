@@ -27,7 +27,7 @@ namespace SeptoMentor
         public int minLabelPixels = 120;
 
         Material _mat;
-        Label3D _banner, _validity, _footer, _phase, _mentor, _ai;
+        Label3D _banner, _validity, _footer, _phase, _mentor, _ai, _pointer;
         readonly Dictionary<Structure, Label3D> _labels = new Dictionary<Structure, Label3D>();
         static readonly int MainTexId = Shader.PropertyToID("_MainTex");
         static readonly int LabelTexId = Shader.PropertyToID("_LabelTex");
@@ -61,6 +61,9 @@ namespace SeptoMentor
             _phase = Text("Phase", new Vector3(0, -half - 5.5f, 0), 14, monitorSize * 1.4f, 3);
             _mentor = Text("Mentor", new Vector3(0, -half - 10f, 0), 15, monitorSize * 1.6f, 6);
             _ai = Text("AIMentor", new Vector3(half + 18f, 6f, 0), 11, 30, 30, TextAlignmentOptions.TopLeft);
+
+            _pointer = Text("InstrumentPointer", Vector3.zero, 16, 12, 3);
+            _pointer.SetActive(false);
 
             foreach (Structure s in System.Enum.GetValues(typeof(Structure)))
             {
@@ -132,6 +135,28 @@ namespace SeptoMentor
 
         /// <summary>Side panel text when there is no AI answer to show (e.g. the controls card).</summary>
         public void ShowSidePanel(string text) => _ai.Set(text, new Color(0.85f, 0.88f, 0.92f));
+
+        /// <summary>
+        /// Instrument tip in the endoscope's viewport (x, y in 0..1, z = depth): when it is out of the picture an arrow at
+        /// the image edge points to it, so the resident can bring it into view. Null hides the arrow.
+        /// </summary>
+        public void SetPointer(Vector3? viewport)
+        {
+            if (_pointer == null) return;
+            bool hide = !viewport.HasValue ||
+                        viewport.Value.z > 0 && viewport.Value.x > 0.04f && viewport.Value.x < 0.96f && viewport.Value.y > 0.04f && viewport.Value.y < 0.96f;
+            _pointer.SetActive(!hide);
+            if (hide) return;
+            var v = viewport.Value;
+            var dir = new Vector2(v.x - 0.5f, v.y - 0.5f);
+            if (v.z < 0) dir = -dir;
+            if (dir.sqrMagnitude < 1e-6f) dir = Vector2.down;
+            var edge = dir / Mathf.Max(Mathf.Abs(dir.x), Mathf.Abs(dir.y)) * 0.42f;
+            var t = _pointer.go.transform;
+            t.localPosition = new Vector3(edge.x * monitorSize, edge.y * monitorSize, -0.5f);
+            t.localRotation = Quaternion.Euler(0, 0, Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
+            _pointer.Set(">>>", new Color(1f, 0.85f, 0.2f));
+        }
 
         public void ToggleLabels() => showLabels = !showLabels;
         public void SetLabels(bool on) => showLabels = on;
