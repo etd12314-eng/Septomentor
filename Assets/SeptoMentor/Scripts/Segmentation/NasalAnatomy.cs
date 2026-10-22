@@ -213,7 +213,7 @@ namespace SeptoMentor
             for (int i = 0; i + 1 < scaled.Length; i++)
             {
                 float c = Capsule(q, scaled[i], scaled[i + 1], half, half);
-                d = d == float.MaxValue ? c : SMin(d, c, 0.6f);
+                d = d == float.MaxValue ? c : SMin(d, c, 2f);   // wide blend: no ridges where the segments meet
             }
             return d / f;
         }
