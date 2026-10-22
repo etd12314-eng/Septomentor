@@ -57,12 +57,15 @@ namespace SeptoMentor
         /// <summary>Autopilot path (m, patient frame): from the left nostril up and back through the common meatus (>= 2 mm clearance).</summary>
         public static readonly Vector3 PathStart = FromWork(new Vector3(-7.5f, -25f, -86f)) * 0.001f, PathEnd = FromWork(new Vector3(-8.5f, -2f, -30f)) * 0.001f;
 
-        // Flap area (S, P mm) on the right septal face, the incision strip in front of it, and the resection window.
-        public const float FlapP0 = -71f, FlapP1 = -28f, FlapS0 = -21f, FlapS1 = 17f, IncisionP0 = -72.2f;
-        public const float WinP0 = -62f, WinP1 = -36f, WinS0 = -18f, WinS1 = 6f;
+        // Flap area (S, P mm) on the right septal face, the incision strip in front of it (~24 mm Killian incision),
+        // and the resection window (~18 x 18 mm over the deviation; leaves a dorsal and a caudal strut of 17-19 mm).
+        public const float FlapP0 = -71f, FlapP1 = -34f, FlapS0 = -18f, FlapS1 = 6f, IncisionP0 = -72.2f;
+        public const float WinP0 = -57f, WinP1 = -39f, WinS0 = -15f, WinS1 = 3f;
+        /// <summary>Bites above / in front of these cut into the 10 mm L-strut (dorsum at S ~22, caudal end at P ~-74).</summary>
+        public const float DorsalStrutS = 12f, CaudalStrutP = -64f;
         public const float CartilageDepth = 0.9f, ContralateralDepth = 2.6f;
         /// <summary>The incision strip is cut segment by segment (along S); the window is resected chunk by chunk.</summary>
-        public const int IncisionSegments = 8, ChunksS = 3, ChunksP = 4;
+        public const int IncisionSegments = 6, ChunksS = 3, ChunksP = 3;
 
         static readonly Color Mucosa = new Color(0.90f, 0.55f, 0.56f), Turbinate = new Color(0.82f, 0.42f, 0.45f),
                               Floor = new Color(0.88f, 0.52f, 0.52f), Pharynx = new Color(0.78f, 0.38f, 0.40f),
@@ -229,6 +232,9 @@ namespace SeptoMentor
             {
                 int a = sn.triangles[t], b = sn.triangles[t + 1], c = sn.triangles[t + 2];
                 var m = (sn.vertices[a] + sn.vertices[b] + sn.vertices[c]) * (1000f / 3f);
+                // The vestibules run out through the nasal base: keep only what lies inside the face (the endoscope
+                // sees the outer skin there, PatientModel.EndoscopeHead).
+                if (m.z < -70f && CtPhantom.SkinSdf(FromWork(m)) > 0.3f) continue;
                 bool other = m.x > Deviation(m.y, m.z);
                 Components(other ? -m.x : m.x, m.y, m.z, buf, other ? -1f : 1f);
                 int best = 0;

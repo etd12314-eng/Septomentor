@@ -30,6 +30,11 @@ namespace SeptoMentor
 
         [Tooltip("Baked procedural nasal cavity (SceneBuilder). Preferred over the OBJ when present.")]
         public List<GeneratedPart> generated = new List<GeneratedPart>();
+        [Tooltip("Outer head and nose for the endoscope image (head frame, nostrils opened), so a scope outside the nose sees the face.")]
+        public Mesh skinMesh;
+
+        /// <summary>The outer head seen by the endoscope (not part of the anatomy bounds or the hologram).</summary>
+        public AnatomyPart ExternalSkin { get; private set; }
 
         public Shader tissueShader;
         public LabelMapping mapping = new LabelMapping();
@@ -85,6 +90,24 @@ namespace SeptoMentor
                 if (g.structure == Structure.Background) p.wetness = 0.25f;   // vestibular skin, hairs
                 p.Apply();
                 if (g.phaseMask != 0x1F) _phased.Add(new KeyValuePair<GameObject, int>(go, g.phaseMask));
+            }
+            if (skinMesh != null)
+            {
+                var go = new GameObject("ExternalHead");
+                go.transform.SetParent(AnatomyRoot, false);
+                go.transform.localRotation = HandheldScope.HeadToAnatomy;   // head frame (-L, S, -P) -> anatomy (L, S, P)
+                go.AddComponent<MeshFilter>().sharedMesh = skinMesh;
+                go.AddComponent<MeshRenderer>();
+                var p = ExternalSkin = AddPart(go, Structure.Background, true);
+                var m = new Material(_tissueMat) { name = "EndoSkin" };
+                m.SetFloat("_Cull", 2f);           // outer surface only: from inside the nose it disappears
+                m.SetFloat("_FalloffDist", 0.06f); // lit from a few centimetres away
+                m.SetFloat("_Mottle", 0.05f);
+                p.Rend.sharedMaterial = m;
+                p.tissueColor = Color.white;
+                p.vertexLook = true;              // skin tint in the vertex colours, no uv: no vessels, dry
+                p.wetness = 0.12f;
+                p.Apply();
             }
             pathStart = NasalAnatomy.PathStart;
             pathEnd = NasalAnatomy.PathEnd;
@@ -188,6 +211,7 @@ namespace SeptoMentor
             var inv = transform.worldToLocalMatrix;
             foreach (var p in Parts)
             {
+                if (p == ExternalSkin) continue;
                 var wb = p.Rend.bounds;
                 var c = inv.MultiplyPoint3x4(wb.center);
                 var e = Vector3.Scale(wb.extents, Abs(transform.lossyScale.Reciprocal()));

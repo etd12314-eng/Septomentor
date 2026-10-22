@@ -298,7 +298,7 @@ namespace SeptoMentor.Nav
         }
 
         /// <summary>Teardrop nostril on the nasal base (wide end posterolateral) and the vestibule above it.</summary>
-        static float Nostril(Vector3 m)
+        public static float Nostril(Vector3 m)
         {
             float c = Capsule(m, new Vector3(9.2f, -28.4f, -84), new Vector3(6, -26.4f, -89.5f), 2.9f, 1.7f);
             return SMin(c, Capsule(m, new Vector3(7.6f, -27.4f, -87), new Vector3(7.3f, -22.8f, -83.5f), 2.9f, 2.7f), 2);

@@ -13,11 +13,12 @@ Shader "SeptoMentor/EndoTissue"
         _Vessels ("Mucosal vessels", Range(0, 1)) = 0.7
         _VertexLook ("Use vertex colour + uv (vessels, wetness)", Float) = 0
         _ClassId ("Class id (label pass only)", Float) = 0
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull (0 off: cavity walls seen from both sides; 2 back: the outer skin)", Float) = 0
     }
     SubShader
     {
         Tags { "RenderType" = "Opaque" "Queue" = "Geometry" }
-        Cull Off
+        Cull [_Cull]
         Pass
         {
             CGPROGRAM

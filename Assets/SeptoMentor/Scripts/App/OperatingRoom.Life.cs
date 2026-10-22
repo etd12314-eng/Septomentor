@@ -14,7 +14,7 @@ namespace SeptoMentor
     {
         static readonly Vector3 VitalsScreen = new Vector3(-1.05f, 1.6f, 0.95f);
 
-        readonly List<(Transform head, Quaternion rest, float phase)> _heads = new List<(Transform, Quaternion, float)>();
+        readonly List<(Transform head, Quaternion rest, float phase, float sway)> _heads = new List<(Transform, Quaternion, float, float)>();
         Transform _staffRoot;
 
         // ------------------------------------------------------------------ equipment, shadows
@@ -111,15 +111,15 @@ namespace SeptoMentor
             _staffRoot.SetParent(transform, false);
             var scrubs = new Color(0.32f, 0.55f, 0.5f);
             var gown = new Color(0.25f, 0.45f, 0.68f);
-            // Anesthesiologist at the head end, beside the machine, watching the patient.
-            Person(new Vector3(-0.95f, 0, 0.5f), 95f, scrubs, scrubs, new Color(0.2f, 0.3f, 0.65f), false, false);
+            // Anesthesiologist at the head end, beside the machine, sitting on a stool with a phone.
+            Person(new Vector3(-1.15f, 0, 0.42f), 80f, scrubs, scrubs, new Color(0.2f, 0.3f, 0.65f), false, false, true);
             // Scrub nurse between the Mayo stand and the back table, gowned and gloved.
             Person(new Vector3(1.1f, 0, -0.2f), -60f, gown, scrubs, new Color(0.35f, 0.65f, 0.75f), true, true);
             // Circulating nurse by the door.
             Person(new Vector3(-2.0f, 0, 2.6f), 200f, scrubs, scrubs, new Color(0.85f, 0.45f, 0.6f), false, false);
         }
 
-        void Person(Vector3 pos, float yaw, Color top, Color pants, Color cap, bool gowned, bool handsForward)
+        void Person(Vector3 pos, float yaw, Color top, Color pants, Color cap, bool gowned, bool handsForward, bool seatedWithPhone = false)
         {
             var root = new GameObject("Person").transform;
             root.SetParent(_staffRoot, false);
@@ -129,37 +129,78 @@ namespace SeptoMentor
             var glove = Mat(new Color(0.85f, 0.8f, 0.62f), 0.5f);
             var shoe = Mat(new Color(0.92f, 0.92f, 0.92f), 0.3f);
 
+            // Standing: hips at 0.8 m. Seated: on a stool, hips at 0.55 m, thighs forward, the upper body lowered with them.
+            float dy = seatedWithPhone ? -0.25f : 0f;
+            if (seatedWithPhone) Stool(root);
             foreach (float x in new[] { -0.1f, 0.1f })
             {
+                if (seatedWithPhone)
+                {
+                    Limb(new Vector3(x, 0.56f, 0.02f), new Vector3(x * 1.2f, 0.56f, 0.42f), 0.075f, pantsM, root);     // thigh
+                    Limb(new Vector3(x * 1.2f, 0.56f, 0.42f), new Vector3(x * 1.2f, 0.09f, 0.46f), 0.062f, pantsM, root);   // shin
+                    Prim(PrimitiveType.Cube, new Vector3(x * 1.2f, 0.04f, 0.5f), new Vector3(0.11f, 0.08f, 0.27f), shoe, null, root);
+                    continue;
+                }
                 Limb(new Vector3(x, 0.08f, 0), new Vector3(x, 0.8f, 0), 0.075f, pantsM, root);
                 Prim(PrimitiveType.Cube, new Vector3(x, 0.04f, 0.04f), new Vector3(0.11f, 0.08f, 0.27f), shoe, null, root);
             }
-            Prim(PrimitiveType.Capsule, new Vector3(0, 1.13f, 0), new Vector3(0.42f, 0.36f, 0.27f), topM, null, root);
+            Prim(PrimitiveType.Capsule, new Vector3(0, 1.13f + dy, 0), new Vector3(0.42f, 0.36f, 0.27f), topM, null, root);
             if (gowned) Prim(PrimitiveType.Cylinder, new Vector3(0, 0.7f, 0), new Vector3(0.44f, 0.32f, 0.32f), topM, null, root);
-            Prim(PrimitiveType.Cylinder, new Vector3(0, 1.5f, 0), new Vector3(0.1f, 0.05f, 0.1f), skin, null, root);
+            Prim(PrimitiveType.Cylinder, new Vector3(0, 1.5f + dy, 0), new Vector3(0.1f, 0.05f, 0.1f), skin, null, root);
 
             foreach (float sx in new[] { -1f, 1f })
             {
-                var shoulder = new Vector3(0.22f * sx, 1.38f, 0);
-                var elbow = handsForward ? new Vector3(0.24f * sx, 1.13f, 0.12f) : new Vector3(0.26f * sx, 1.1f, 0.02f);
-                var hand = handsForward ? new Vector3(0.14f * sx, 1.08f, 0.33f) : new Vector3(0.25f * sx, 0.84f, 0.06f);
+                var shoulder = new Vector3(0.22f * sx, 1.38f + dy, 0);
+                var elbow = seatedWithPhone ? new Vector3(0.21f * sx, 1.1f + dy, 0.1f)
+                          : handsForward ? new Vector3(0.24f * sx, 1.13f, 0.12f) : new Vector3(0.26f * sx, 1.1f, 0.02f);
+                var hand = seatedWithPhone ? new Vector3(0.065f * sx, 1.17f + dy, 0.28f)
+                         : handsForward ? new Vector3(0.14f * sx, 1.08f, 0.33f) : new Vector3(0.25f * sx, 0.84f, 0.06f);
                 Limb(shoulder, elbow, 0.055f, topM, root);
                 Limb(elbow, hand, 0.045f, gowned ? topM : skin, root);
                 Prim(PrimitiveType.Sphere, hand, new Vector3(0.075f, 0.09f, 0.075f), gowned ? glove : skin, null, root);
             }
+            if (seatedWithPhone) Phone(new Vector3(0, 1.21f + dy, 0.29f), root);
 
             var head = new GameObject("Head").transform;
             head.SetParent(root, false);
-            head.localPosition = new Vector3(0, 1.62f, 0);
+            head.localPosition = new Vector3(0, 1.62f + dy, 0);
+            if (seatedWithPhone) head.localRotation = Quaternion.Euler(32f, 0, 0);   // looking down at the phone
             Prim(PrimitiveType.Sphere, new Vector3(0, 0.02f, 0), new Vector3(0.19f, 0.23f, 0.21f), skin, null, head);
             Prim(PrimitiveType.Sphere, new Vector3(0, 0.08f, -0.01f), new Vector3(0.21f, 0.15f, 0.23f), capM, null, head);
             Prim(PrimitiveType.Cube, new Vector3(0, -0.02f, 0.095f), new Vector3(0.14f, 0.09f, 0.03f), Mat(new Color(0.55f, 0.75f, 0.9f), 0.1f), null, head);
             var eye = Mat(new Color(0.08f, 0.07f, 0.06f), 0.8f);
             Prim(PrimitiveType.Sphere, new Vector3(-0.035f, 0.045f, 0.096f), Vector3.one * 0.02f, eye, null, head);
             Prim(PrimitiveType.Sphere, new Vector3(0.035f, 0.045f, 0.096f), Vector3.one * 0.02f, eye, null, head);
-            _heads.Add((head, head.localRotation, Random.value * 10f));
+            _heads.Add((head, head.localRotation, Random.value * 10f, seatedWithPhone ? 0.25f : 1f));
 
             Shadow(pos, new Vector2(0.55f, 0.45f), 0.35f);
+        }
+
+        /// <summary>Wheeled OR stool: seat, gas-lift column, five-star base.</summary>
+        void Stool(Transform root)
+        {
+            var black = Mat(new Color(0.12f, 0.12f, 0.13f), 0.4f);
+            var chrome = Mat(new Color(0.75f, 0.77f, 0.8f), 0.85f, 0f, 0f, 0.85f);
+            Prim(PrimitiveType.Cylinder, new Vector3(0, 0.49f, 0.05f), new Vector3(0.44f, 0.035f, 0.44f), black, null, root);      // seat
+            Prim(PrimitiveType.Cube, new Vector3(0, 0.74f, -0.16f), new Vector3(0.36f, 0.22f, 0.05f), black, Quaternion.Euler(-8, 0, 0), root);   // back
+            Limb(new Vector3(0, 0.5f, -0.13f), new Vector3(0, 0.66f, -0.17f), 0.015f, chrome, root);
+            Limb(new Vector3(0, 0.08f, 0.05f), new Vector3(0, 0.46f, 0.05f), 0.025f, chrome, root);                                    // column
+            for (int k = 0; k < 5; k++)
+            {
+                var dir = Quaternion.Euler(0, k * 72f, 0) * Vector3.forward;
+                var foot = new Vector3(0, 0.06f, 0.05f) + dir * 0.28f;
+                Limb(new Vector3(0, 0.08f, 0.05f), foot, 0.018f, black, root);
+                Prim(PrimitiveType.Sphere, foot - new Vector3(0, 0.03f, 0), Vector3.one * 0.045f, black, null, root);                 // caster
+            }
+        }
+
+        /// <summary>A phone held in both hands, screen lit and tilted toward the face.</summary>
+        void Phone(Vector3 at, Transform root)
+        {
+            var tilt = Quaternion.Euler(-55f, 0, 0);
+            Prim(PrimitiveType.Cube, at, new Vector3(0.075f, 0.009f, 0.155f), Mat(new Color(0.06f, 0.06f, 0.07f), 0.8f), tilt, root);
+            Prim(PrimitiveType.Cube, at + tilt * new Vector3(0, 0.0048f, 0), new Vector3(0.068f, 0.001f, 0.145f),
+                 Mat(new Color(0.55f, 0.75f, 0.95f), 0.9f, 0f, 1.2f), tilt, root);
         }
 
         /// <summary>Capsule from a to b (local to parent).</summary>
@@ -361,7 +402,7 @@ namespace SeptoMentor
         {
             float t = Time.time;
             foreach (var h in _heads)
-                h.head.localRotation = h.rest * Quaternion.Euler(Mathf.Sin(t * 0.31f + h.phase) * 6f, Mathf.Sin(t * 0.17f + h.phase * 2f) * 18f, 0);
+                h.head.localRotation = h.rest * Quaternion.Euler(Mathf.Sin(t * 0.31f + h.phase) * 6f * h.sway, Mathf.Sin(t * 0.17f + h.phase * 2f) * 18f * h.sway, 0);
             UpdateVitals();
 
             if (_ctTask != null && _ctTask.IsCompleted)

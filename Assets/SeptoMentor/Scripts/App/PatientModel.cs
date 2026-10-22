@@ -28,6 +28,31 @@ namespace SeptoMentor
             return mesh;
         }
 
+        /// <summary>
+        /// The head for the endoscope image (VirtualPatient.skinMesh): the same skin with the nostril pockets removed,
+        /// so a scope outside the nose sees the face and looks through the nostrils into the vestibules (NasalAnatomy).
+        /// </summary>
+        public static Mesh EndoscopeHead(Mesh head)
+        {
+            var v = head.vertices;
+            var tris = head.triangles;
+            var keep = new System.Collections.Generic.List<int>(tris.Length);
+            for (int t = 0; t < tris.Length; t += 3)
+            {
+                var c = ToPhantom((v[tris[t]] + v[tris[t + 1]] + v[tris[t + 2]]) / 3f);
+                bool nostril = c.z < -78f && c.z > -97f && c.y < -15f && CtPhantom.Nostril(new Vector3(Mathf.Abs(c.x), c.y, c.z)) < 0.4f;
+                if (nostril) continue;
+                keep.Add(tris[t]); keep.Add(tris[t + 1]); keep.Add(tris[t + 2]);
+            }
+            var m = new Mesh { name = "EndoscopeHead", indexFormat = head.indexFormat };
+            m.vertices = v;
+            m.normals = head.normals;
+            m.colors = head.colors;
+            m.SetTriangles(keep, 0);
+            m.RecalculateBounds();
+            return m;
+        }
+
         public static Mesh BuildDrape(float stepMm = 12f)
         {
             // Grid over (L, S, P) mm: L -420..420, S -1960..-100, P -260..170.

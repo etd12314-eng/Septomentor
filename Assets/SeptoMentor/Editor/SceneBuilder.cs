@@ -74,6 +74,7 @@ namespace SeptoMentor.EditorTools
             room.shadowShader = Shader.Find("SeptoMentor/ORShadow");
             room.skinShader = Shader.Find("SeptoMentor/ORSkin");
             BakePatient(room);
+            patient.skinMesh = room.headMesh != null ? AssetDatabase.LoadAllAssetsAtPath(PatientPath).OfType<Mesh>().FirstOrDefault(x => x.name == "EndoscopeHead") : null;
             var userRig = new GameObject("UserRig").transform;
             userRig.position = OperatingRoom.MonitorPosition;
             var monitor = new GameObject("Monitor").transform;
@@ -204,6 +205,7 @@ namespace SeptoMentor.EditorTools
                 AssetDatabase.DeleteAsset(PatientPath);
                 AssetDatabase.CreateAsset(head, PatientPath);
                 AssetDatabase.AddObjectToAsset(drape, PatientPath);
+                AssetDatabase.AddObjectToAsset(PatientModel.EndoscopeHead(head), PatientPath);
                 AssetDatabase.SaveAssets();
                 room.headMesh = head; room.drapeMesh = drape;
                 Debug.Log($"[SeptoMentor] Patient baked: head {head.vertexCount} vertices, drape {drape.vertexCount} vertices, {(DateTime.Now - t0).TotalSeconds:0.0} s");

@@ -54,7 +54,7 @@ namespace SeptoMentor
             foreach (var part in patient.Parts)
             {
                 var mf = part.GetComponent<MeshFilter>();
-                if (mf == null) continue;
+                if (mf == null || part == patient.ExternalSkin) continue;
                 var go = new GameObject("Ghost_" + part.name);
                 go.transform.SetParent(_content, false);
                 var local = patient.transform.worldToLocalMatrix * part.transform.localToWorldMatrix;

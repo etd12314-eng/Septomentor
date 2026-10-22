@@ -516,7 +516,7 @@ namespace SeptoMentor
                 UpdateProgress();
                 return;
             }
-            bool dorsal = s >= NasalAnatomy.WinS1 + tol, caudal = p <= NasalAnatomy.WinP0 - tol;
+            bool dorsal = s >= NasalAnatomy.DorsalStrutS, caudal = p <= NasalAnatomy.CaudalStrutP;
             if (dorsal || caudal)
             {
                 StrutViolations++;
