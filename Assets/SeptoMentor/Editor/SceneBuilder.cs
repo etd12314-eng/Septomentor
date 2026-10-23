@@ -178,6 +178,8 @@ namespace SeptoMentor.EditorTools
 
             var dash = new GameObject("NavDashboard").AddComponent<NavDashboard>();
             dash.sliceShader = Shader.Find("SeptoMentor/CtSlice");
+            dash.solidShader = Shader.Find("SeptoMentor/ORSurface");
+            dash.markerShader = Shader.Find("SeptoMentor/NavMarker");
             dash.transform.position = new Vector3(-0.25f, 1.55f, 0.75f);
 
             var nav = sys.AddComponent<NavigationApp>();

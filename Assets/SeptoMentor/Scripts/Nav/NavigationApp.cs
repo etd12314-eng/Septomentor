@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -17,8 +18,9 @@ namespace SeptoMentor.Nav
     /// several millimetres of error; this is not a certified navigation system and must not be
     /// the basis of a surgical decision. Clinical use needs ethics / regulatory approval.
     ///
+    /// Pointer: a rigid instrument fixed to the bottom end of the right controller's handle, tip found by pivot calibration.
     /// Controls: right trigger = capture / hold to collect, A = next / confirm, B = back / redo,
-    /// X = overlay mode, Y = ask AI, left trigger = CT window, right stick click = move panel here,
+    /// X = overlay mode, Y = ask AI, left trigger = CT window, right stick click = move / resize the CT panel (it follows the gaze),
     /// hold left grip + sticks = nudge registration, hold both grips 2 s = main menu.
     /// Hands (controllers put down): right index fingertip = pointer (no calibration, but only ~5-10 mm
     /// accurate), left pinch = trigger, left palm toward the face = poke menu with the other buttons.
@@ -134,7 +136,8 @@ namespace SeptoMentor.Nav
                 ai.Ask(q);
             };
             dashboard.SetWindow(2000, 300);
-            Invoke(nameof(PlaceDashboard), 0.5f);
+            dashboard.markerShader = markerShader;
+            Invoke(nameof(RestoreDashboard), 0.5f);
             logger.Log("nav", null, null, null, "XR navigation started; cases: " + string.Join(", ", _cases));
         }
 
@@ -156,8 +159,10 @@ namespace SeptoMentor.Nav
             _in.Update();
             UpdateTip();
             MenuGesture();
+            dashboard.ShowMountGuide(_step == Step.Calibrate && !_handPointer);
 
-            if (_in.StickClick) PlaceDashboard();
+            if (_panelMove) { MovePanel(); UpdateStatus(); return; }   // the panel owns trigger / A / B while it moves
+            if (_in.StickClick) StartPanelMove();
             if (_in.X) CycleOverlay();
             if (_in.LeftTriggerDown) CycleWindow();
             if (_in.Y) Ask();
@@ -255,7 +260,10 @@ namespace SeptoMentor.Nav
             }
             BuildCase(r);
             _step = Step.Calibrate;
-            _calibMsg = _tipCalibrated ? "Saved calibration loaded." : "Not calibrated: using a default tip offset.";
+            _calib = Calib.Idle;
+            _calibMsg = !_tipCalibrated ? "Not calibrated: the tip position is only a guess."
+                : PlayerPrefs.HasKey("nav_tip_rms") ? $"Saved calibration loaded ({PlayerPrefs.GetString("nav_tip_date", "?")}, RMS {PlayerPrefs.GetFloat("nav_tip_rms"):0.0} mm). Recalibrate if the instrument was re-attached."
+                : "Saved calibration loaded. Recalibrate if the instrument was re-attached.";
         }
 
         void BuildCase(Loaded r)
@@ -304,14 +312,23 @@ namespace SeptoMentor.Nav
             logger.Log("nav", null, null, null, $"case {_case.name}: {v.description}; landmarks {_case.landmarks.Count}; skin {r.skin.vertices.Count} v, bone {r.bone.vertices.Count} v");
         }
 
+        enum Calib { Idle, Collecting, Check }
+        Calib _calib;
+        float _calibStart;
+        Vector3 _calibPivot;
+        readonly List<float> _pivotT = new List<float>();
+        readonly List<(float t, float d)> _checkHist = new List<(float, float)>();
+
+        /// <summary>
+        /// Pivot calibration of the instrument tip. Trigger once to start, then circle the controller with the tip held in a
+        /// fixed dent; collection stops by itself once the motion covers two independent tilt directions. Samples where the
+        /// tip slipped are dropped and the fit repeated. Afterwards the live tip-to-dent distance checks the result.
+        /// </summary>
         void Calibrate()
         {
-            dashboard.SetStep("2. Pointer tip calibration",
-                "Rest the controller tip (or a stylus fixed to it) in a small divot that cannot move. " +
-                "HOLD the trigger and slowly pivot the controller around the tip for ~5 s, then release.\n" +
-                _calibMsg + "   A = continue" + (_tipCalibrated ? "" : " with default") + "   B = back to cases");
             if (_handPointer)
             {
+                _calib = Calib.Idle; _pivotPos.Clear(); _pivotRot.Clear(); _pivotT.Clear();
                 dashboard.SetStep("2. Pointer: index fingertip (hand tracking)",
                     "Your right index fingertip is the pointer - no calibration needed. Hand tracking is only accurate to ~5-10 mm: " +
                     "for registration and verification prefer the calibrated controller.\nTo capture: rest the fingertip on the point, hold still, pinch with the left hand " +
@@ -320,34 +337,152 @@ namespace SeptoMentor.Nav
                 if (_in.B) { ClearCase(); _step = Step.SelectCase; }
                 return;
             }
-            if (_in.TriggerHeld && NavInput.RightPose(out var p, out var q))
+
+            bool pose = NavInput.RightPose(out var p, out var q);
+            if (_calib == Calib.Collecting)
             {
-                _pivotPos.Add(trackingOrigin.TransformPoint(p)); _pivotRot.Add(trackingOrigin.rotation * q);
-                _calibMsg = $"Collecting... {_pivotPos.Count} samples";
-            }
-            else if (_pivotPos.Count > 0)
-            {
-                float spread = 0;
-                foreach (var r in _pivotRot) spread = Mathf.Max(spread, Quaternion.Angle(_pivotRot[0], r));
-                if (_pivotPos.Count < 60 || spread < 25f)
-                    _calibMsg = $"Not enough motion ({spread:0} deg, {_pivotPos.Count} samples). Pivot wider (> 25 deg) and longer.";
-                else
+                float t = Time.time - _calibStart;
+                if (pose && t > 0.4f)   // skip the jolt of the trigger press
                 {
-                    float rms = Registration.Pivot(_pivotRot, _pivotPos, out var tip, out _) * 1000f;
-                    if (rms < 2.5f && tip.magnitude < 0.4f)
-                    {
-                        _tipOffset = tip; _tipCalibrated = true;
-                        PlayerPrefs.SetFloat("nav_tip_x", tip.x); PlayerPrefs.SetFloat("nav_tip_y", tip.y); PlayerPrefs.SetFloat("nav_tip_z", tip.z);
-                        PlayerPrefs.Save();
-                        _calibMsg = $"Calibrated: tip {tip.magnitude * 1000f:0} mm from the grip, RMS {rms:0.0} mm.";
-                    }
-                    else _calibMsg = $"Calibration rejected (RMS {rms:0.0} mm). Keep the tip still in the divot and try again.";
-                    logger.Log("nav", null, "pivot", null, _calibMsg);
+                    _pivotPos.Add(trackingOrigin.TransformPoint(p)); _pivotRot.Add(trackingOrigin.rotation * q); _pivotT.Add(Time.time);
                 }
-                _pivotPos.Clear(); _pivotRot.Clear();
+                float cov = PivotCoverage(out float maxTilt);
+                int pct = Mathf.RoundToInt(cov * 100f);
+                _calibMsg = $"COLLECTING  {Bar(cov)} {pct}%   ({_pivotPos.Count} samples, tilted up to {maxTilt:0} deg). " +
+                            (maxTilt < 10f ? "Tilt more - circle the handle around the tip." : cov < 1f ? "Keep circling, change direction." : "Almost done...");
+                if (_in.TriggerDown) FinishPivot(true);
+                else if ((cov >= 1f && _pivotPos.Count >= 250 && t > 4f) || t > 30f) FinishPivot(false);
             }
-            if (_in.B) { ClearCase(); _step = Step.SelectCase; }
-            if (_in.A) _step = _planMissing.Count > 0 ? Step.PlanLandmarks : Step.Register;
+            else if (_in.TriggerDown && pose)
+            {
+                _pivotPos.Clear(); _pivotRot.Clear(); _pivotT.Clear();
+                _calib = Calib.Collecting; _calibStart = Time.time;
+                NavInput.HapticRight(0.4f, 0.05f);
+            }
+
+            string check = "";
+            if (_calib == Calib.Check && _tipValid)
+            {
+                float d = Vector3.Distance(_tipWorld, _calibPivot) * 1000f;
+                _checkHist.Add((Time.time, d));
+                _checkHist.RemoveAll(h => Time.time - h.t > 2f);
+                float max = 0; foreach (var h in _checkHist) max = Mathf.Max(max, h.d);
+                check = d > 15f
+                    ? "\nCHECK: put the tip back in the dent and tilt the controller around it."
+                    : $"\nCHECK - tip in the dent, tilt it: the tip moves {max:0.0} mm ({(max < 2f ? "GOOD" : max < 3.5f ? "acceptable" : "POOR - recalibrate")}). The yellow ball must sit on the real tip.";
+            }
+
+            dashboard.SetStep("2. Pointer instrument + tip calibration" + (_tipCalibrated ? "" : "  (NOT CALIBRATED)"),
+                "Mount the instrument as on the model at the left. Put its tip in a small dent that cannot move (e.g. a hole in the instrument tray), " +
+                "press the trigger ONCE, then slowly circle the controller 20-30 deg around the tip - it stops by itself.\n" +
+                _calibMsg + check + "\n" +
+                (_calib == Calib.Collecting ? "Trigger = stop now" : "Trigger = calibrate   A = continue" + (_tipCalibrated ? "" : " with the default (inaccurate)") + "   B = back to cases"));
+
+            if (_calib == Calib.Collecting) return;
+            if (_in.B) { _calib = Calib.Idle; ClearCase(); _step = Step.SelectCase; }
+            else if (_in.A) { _calib = Calib.Idle; _step = _planMissing.Count > 0 ? Step.PlanLandmarks : Step.Register; }
+        }
+
+        static string Bar(float f)
+        {
+            int n = Mathf.Clamp(Mathf.RoundToInt(f * 10f), 0, 10);
+            return "[" + new string('#', n) + new string('-', 10 - n) + "]";
+        }
+
+        /// <summary>
+        /// How well the collected orientations constrain the tip, 0..1: the spread (std, deg) of the rotations about the
+        /// second-best rotation axis, against 7 deg. Rotations about one axis only (e.g. twisting the instrument) score 0.
+        /// </summary>
+        float PivotCoverage(out float maxTilt)
+        {
+            maxTilt = 0f;
+            int n = _pivotRot.Count;
+            if (n < 10) return 0f;
+            var inv = Quaternion.Inverse(_pivotRot[0]);
+            var vs = new Vector3[n];
+            var mean = Vector3.zero;
+            for (int i = 0; i < n; i++)
+            {
+                (inv * _pivotRot[i]).ToAngleAxis(out float ang, out var axis);
+                if (ang > 180f) ang -= 360f;
+                if (float.IsNaN(axis.x) || float.IsInfinity(axis.x)) axis = Vector3.zero;
+                vs[i] = axis * ang;
+                mean += vs[i];
+                maxTilt = Mathf.Max(maxTilt, Mathf.Abs(ang));
+            }
+            mean /= n;
+            double a00 = 0, a01 = 0, a02 = 0, a11 = 0, a12 = 0, a22 = 0;
+            foreach (var v0 in vs)
+            {
+                var v = v0 - mean;
+                a00 += v.x * v.x; a01 += v.x * v.y; a02 += v.x * v.z; a11 += v.y * v.y; a12 += v.y * v.z; a22 += v.z * v.z;
+            }
+            a00 /= n; a01 /= n; a02 /= n; a11 /= n; a12 /= n; a22 /= n;
+            // Middle eigenvalue of the symmetric 3x3 covariance (trigonometric method).
+            double p1 = a01 * a01 + a02 * a02 + a12 * a12, qd = (a00 + a11 + a22) / 3.0, mid;
+            if (p1 < 1e-12)
+            {
+                var d = new[] { a00, a11, a22 }; Array.Sort(d); mid = d[1];
+            }
+            else
+            {
+                double p2 = (a00 - qd) * (a00 - qd) + (a11 - qd) * (a11 - qd) + (a22 - qd) * (a22 - qd) + 2 * p1, pp = Math.Sqrt(p2 / 6.0);
+                double b00 = (a00 - qd) / pp, b11 = (a11 - qd) / pp, b22 = (a22 - qd) / pp, b01 = a01 / pp, b02 = a02 / pp, b12 = a12 / pp;
+                double det = b00 * (b11 * b22 - b12 * b12) - b01 * (b01 * b22 - b12 * b02) + b02 * (b01 * b12 - b11 * b02);
+                double rr = Math.Max(-1, Math.Min(1, det / 2)), phi = Math.Acos(rr) / 3;
+                double e1 = qd + 2 * pp * Math.Cos(phi), e3 = qd + 2 * pp * Math.Cos(phi + 2 * Math.PI / 3);
+                mid = 3 * qd - e1 - e3;
+            }
+            return Mathf.Clamp01((float)Math.Sqrt(Math.Max(0, mid)) / 7f);
+        }
+
+        void FinishPivot(bool stoppedByTrigger)
+        {
+            _calib = Calib.Idle;
+            if (stoppedByTrigger)   // drop the jolt of the stopping trigger press
+                for (int i = _pivotT.Count - 1; i >= 0 && Time.time - _pivotT[i] < 0.3f; i--) { _pivotT.RemoveAt(i); _pivotPos.RemoveAt(i); _pivotRot.RemoveAt(i); }
+            float cov = PivotCoverage(out float maxTilt);
+            int total = _pivotPos.Count;
+            if (total < 100 || cov < 0.6f)
+            {
+                _calibMsg = $"Not enough motion ({maxTilt:0} deg, coverage {cov * 100f:0}%). Circle the controller wider (20-30 deg) in all directions.";
+                logger.Log("nav", null, "pivot", null, _calibMsg);
+                return;
+            }
+            var rot = new List<Quaternion>(_pivotRot); var pos = new List<Vector3>(_pivotPos);
+            float rms = Registration.Pivot(rot, pos, out var tip, out var pivot);
+            for (int it = 0; it < 3; it++)
+            {
+                // Drop samples where the tip slipped in the dent, then refit.
+                float thr = Mathf.Max(2.5f * rms, 0.0015f);
+                int before = rot.Count;
+                for (int i = rot.Count - 1; i >= 0; i--)
+                    if ((rot[i] * tip + pos[i] - pivot).magnitude > thr) { rot.RemoveAt(i); pos.RemoveAt(i); }
+                if (rot.Count == before || rot.Count < 80) break;
+                rms = Registration.Pivot(rot, pos, out tip, out pivot);
+            }
+            rms *= 1000f;
+            float kept = rot.Count / (float)total, len = tip.magnitude * 1000f;
+            if (kept < 0.7f)
+                _calibMsg = $"Calibration rejected: the tip slipped ({(1 - kept) * 100f:0}% of samples off). Use a deeper dent and keep the tip pressed in.";
+            else if (rms > 3f)
+                _calibMsg = $"Calibration rejected (RMS {rms:0.0} mm). Check the instrument does not wobble on the controller, then try again.";
+            else if (len > 400f || len < 20f)
+                _calibMsg = $"Calibration rejected: tip {len:0} mm from the controller is implausible. Try again.";
+            else
+            {
+                _tipOffset = tip; _tipCalibrated = true;
+                PlayerPrefs.SetFloat("nav_tip_x", tip.x); PlayerPrefs.SetFloat("nav_tip_y", tip.y); PlayerPrefs.SetFloat("nav_tip_z", tip.z);
+                PlayerPrefs.SetFloat("nav_tip_rms", rms);
+                PlayerPrefs.SetString("nav_tip_date", DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
+                PlayerPrefs.Save();
+                string quality = rms < 1f ? "excellent" : rms < 2f ? "good" : "marginal - consider redoing";
+                _calibMsg = $"CALIBRATED: tip {len:0} mm from the controller, RMS {rms:0.0} mm ({quality}), {rot.Count}/{total} samples.";
+                _calib = Calib.Check; _calibPivot = pivot; _checkHist.Clear();
+                NavInput.HapticRight(0.6f, 0.15f);
+            }
+            logger.Log("nav", null, "pivot", null, _calibMsg);
+            _pivotPos.Clear(); _pivotRot.Clear(); _pivotT.Clear();
         }
 
         void PlanLandmarks()
@@ -926,6 +1061,86 @@ namespace SeptoMentor.Nav
             var centre = _case != null && _case.TryGetLandmark("Pronasale", out var n) ? n : Vector3.zero;
             _patientRoot.position = head.position + fwd * 0.45f - Vector3.up * 0.12f - _patientRoot.rotation * centre;
             ApplyOverlayMode();
+        }
+
+        // ---- moving / resizing the CT panel
+
+        bool _panelMove;
+        float _panelDist = 0.75f, _panelScale = 1f, _panelScaleBefore;
+        Vector3 _panelPosBefore;
+        Quaternion _panelRotBefore;
+
+        void StartPanelMove()
+        {
+            if (head == null) return;
+            _panelMove = true;
+            var t = dashboard.transform;
+            _panelPosBefore = t.position; _panelRotBefore = t.rotation; _panelScaleBefore = _panelScale;
+            _panelDist = Mathf.Clamp(Vector3.Distance(head.position, t.position), 0.35f, 1.6f);
+            logger.Log("input", PhaseName, null, null, "panel move");
+        }
+
+        /// <summary>The panel follows the gaze; left stick = nearer / farther, right stick up / down (or Up / Down) = size.</summary>
+        void MovePanel()
+        {
+            var t = dashboard.transform;
+            _panelDist = Mathf.Clamp(_panelDist + _in.LeftStick.y * 0.5f * Time.deltaTime, 0.35f, 1.6f);
+            if (_in.StickStepY != 0) _panelScale = Mathf.Clamp(_panelScale * (_in.StickStepY > 0 ? 1.15f : 1f / 1.15f), 0.5f, 2.5f);
+            t.localScale = Vector3.one * 0.01f * _panelScale;
+            var target = head.position + head.forward * _panelDist;
+            var rot = Quaternion.LookRotation(target - head.position, Vector3.up);
+            float k = 1f - Mathf.Exp(-Time.deltaTime * 10f);
+            t.SetPositionAndRotation(Vector3.Lerp(t.position, target, k), Quaternion.Slerp(t.rotation, rot, k));
+            dashboard.SetMoving(true, $"MOVING THE PANEL - look where you want it.  " +
+                (_in.HandsActive ? "Pinch = place here   Up / Down = size" : "Trigger = place here   left stick = nearer / farther   right stick up / down = size") +
+                $"   B = cancel     ({_panelDist * 100f:0} cm, size {_panelScale * 100f:0}%)");
+            if (_in.TriggerDown || _in.StickClick || _in.A)
+            {
+                _panelMove = false; dashboard.SetMoving(false);
+                SavePanel();
+            }
+            else if (_in.B)
+            {
+                _panelMove = false; dashboard.SetMoving(false);
+                _panelScale = _panelScaleBefore;
+                t.SetPositionAndRotation(_panelPosBefore, _panelRotBefore);
+                t.localScale = Vector3.one * 0.01f * _panelScale;
+            }
+        }
+
+        /// <summary>Panel pose is kept in tracking space between sessions.</summary>
+        void SavePanel()
+        {
+            var t = dashboard.transform;
+            var lp = trackingOrigin.InverseTransformPoint(t.position);
+            var lr = Quaternion.Inverse(trackingOrigin.rotation) * t.rotation;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            PlayerPrefs.SetString("nav_panel", string.Join(";", new[] { lp.x, lp.y, lp.z, lr.x, lr.y, lr.z, lr.w, _panelScale }.Select(f => f.ToString("R", ci))));
+            PlayerPrefs.Save();
+        }
+
+        void RestoreDashboard()
+        {
+            var parts = PlayerPrefs.GetString("nav_panel", "").Split(';');
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            var f = new float[8];
+            bool ok = parts.Length == 8 && head != null;
+            for (int i = 0; ok && i < 8; i++) ok = float.TryParse(parts[i], System.Globalization.NumberStyles.Float, ci, out f[i]);
+            if (ok)
+            {
+                var pos = trackingOrigin.TransformPoint(new Vector3(f[0], f[1], f[2]));
+                var rot = trackingOrigin.rotation * new Quaternion(f[3], f[4], f[5], f[6]).normalized;
+                // A saved pose from another room / guardian would be somewhere odd: only use it when it is in front, within reach of sight.
+                var to = pos - head.position;
+                if (to.magnitude < 2f && Vector3.Dot(to.normalized, head.forward) > 0f)
+                {
+                    _panelScale = Mathf.Clamp(f[7], 0.5f, 2.5f);
+                    dashboard.transform.SetPositionAndRotation(pos, rot);
+                    dashboard.transform.localScale = Vector3.one * 0.01f * _panelScale;
+                    return;
+                }
+            }
+            PlaceDashboard();
         }
 
         void PlaceDashboard()

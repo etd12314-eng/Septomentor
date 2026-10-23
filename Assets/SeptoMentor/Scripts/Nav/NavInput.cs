@@ -29,7 +29,7 @@ namespace SeptoMentor.Nav
         {
             m.AddButton("a", "Next\n(A)"); m.AddButton("b", "Back\n(B)"); m.AddButton("up", "Up");
             m.AddButton("x", "Overlay\n(X)"); m.AddButton("window", "CT window"); m.AddButton("down", "Down");
-            m.AddButton("y", "Ask AI\n(Y)"); m.AddButton("panel", "Panel\nhere"); m.AddButton("home", "Hold 2 s:\nmenu");
+            m.AddButton("y", "Ask AI\n(Y)"); m.AddButton("panel", "Move\npanel"); m.AddButton("home", "Hold 2 s:\nmenu");
         }
 
         public void Update()
