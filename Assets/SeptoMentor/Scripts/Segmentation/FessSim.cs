@@ -207,16 +207,10 @@ namespace SeptoMentor
             foreach (var g in _groups[s].Values)
                 foreach (var c in g.chunks)
                     if (!c.go.activeSelf && c.bounds.SqrDistance(q) < 2.25f) return true;
-            if (q.x < -14f && q.x > -26.5f && q.y > 0.5f && q.y < 21.5f && q.z > -51.5f && q.z < -2.5f && _openCells[s].Contains(NasalAnatomy.CellId(q))) return true;
-            if (Fraction(s, "Antrostomy") > 0f && Inside(q, new Vector3(-34.5f, -8.5f, -40f), new Vector3(11.5f, 13.5f, 17f))) return true;
-            if (Fraction(s, "Sphenoid") > 0f && Inside(q, new Vector3(-7f, 17f, 13f), new Vector3(6f, 6f, 9f))) return true;
+            if (q.x < -14f && q.x > -29f && q.y > 0.5f && q.y < 27f && q.z > -51.5f && q.z < -2.5f && _openCells[s].Contains(NasalAnatomy.CellId(q))) return true;
+            if (Fraction(s, "Antrostomy") > 0f && NasalAnatomy.MaxillarySinus(q.x, q.y, q.z) < 0.5f) return true;
+            if (Fraction(s, "Sphenoid") > 0f && NasalAnatomy.SphenoidSinus(q.x, q.y, q.z) < 0.5f) return true;
             return false;
-        }
-
-        static bool Inside(Vector3 q, Vector3 c, Vector3 r)
-        {
-            var d = new Vector3((q.x - c.x) / r.x, (q.y - c.y) / r.y, (q.z - c.z) / r.z);
-            return d.sqrMagnitude < 1f;
         }
 
         void UpdateProgress()
@@ -425,11 +419,12 @@ namespace SeptoMentor
         {
             bool ethmoidZone = q.y > -2f && q.y < 26f && q.z > -56f && q.z < -2f;
             bool pressing = depth > 0.6f;
-            if (ethmoidZone && q.x < -24.5f && (pressing || cutting))
+            float roof = q.x > -10.5f ? 22f : NasalAnatomy.SkullBase(q.z);   // cribriform plate medial to the middle turbinate, fovea lateral
+            if (ethmoidZone && q.x < NasalAnatomy.LaminaPapyracea(q.z) + 0.8f && (pressing || cutting))
                 Warn("orbit", "Lamina papyracea! The orbit is just lateral - stay medial (orbital fat, medial rectus).");
-            else if (q.y > 22.5f && q.z > -50f && q.z < 0f && (pressing || cutting))
+            else if (q.y > roof - 0.6f && q.z > -50f && q.z < 0f && (pressing || cutting))
                 Warn("skull_base", "Skull base! Keep below the ethmoid roof - CSF leak risk.");
-            else if (cutting && (q - new Vector3(-14f, 22f, -42f)).magnitude < 3.5f)
+            else if (cutting && (q - new Vector3(-16f, 24.4f, -43f)).magnitude < 3.5f)
                 Warn("ethmoid_artery", "Anterior ethmoidal artery at the skull base behind the frontal recess - do not bite here.");
             else if (cutting && q.z > 4f && q.y > 10f && q.x < -11.5f)
                 Warn("sphenoid_lateral", "Lateral sphenoid wall: carotid artery and optic nerve! Open the sphenoid medially and inferiorly only.");

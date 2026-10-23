@@ -33,7 +33,7 @@ Shader "SeptoMentor/EndoTissue"
             struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; float4 color : COLOR; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct v2f
             {
-                float4 pos : SV_POSITION; float3 wpos : TEXCOORD0; float3 wn : TEXCOORD1; float3 tint : TEXCOORD2; float2 look : TEXCOORD3;
+                float4 pos : SV_POSITION; float3 wpos : TEXCOORD0; float3 wn : TEXCOORD1; float4 tint : TEXCOORD2; float2 look : TEXCOORD3;
                 float3 opos : TEXCOORD4;   // object-space position (m): the patient sits 500 m away, too far for fine world-space noise
                 UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -47,8 +47,8 @@ Shader "SeptoMentor/EndoTissue"
                 o.wpos = mul(unity_ObjectToWorld, v.vertex).xyz;
                 o.wn = UnityObjectToWorldNormal(v.normal);
                 o.opos = v.vertex.xyz;
-                // Generated anatomy: per-vertex colour multiplier, uv = (vessel density, wetness). Primitives: neutral.
-                o.tint = lerp(float3(1, 1, 1), v.color.rgb, _VertexLook);
+                // Generated anatomy: per-vertex colour multiplier, alpha = ambient occlusion, uv = (vessel density, wetness). Primitives: neutral.
+                o.tint = lerp(float4(1, 1, 1, 1), v.color, _VertexLook);
                 o.look = lerp(float2(1, 1), v.uv, _VertexLook);
                 return o;
             }
@@ -86,7 +86,8 @@ Shader "SeptoMentor/EndoTissue"
 
                 float atten = 1.6 / (1.0 + (d / _FalloffDist) * (d / _FalloffDist));
                 float m = noise(p * 0.9) * 0.6 + noise(p * 2.6) * 0.4;
-                float3 base = _TissueColor.rgb * i.tint * (1.0 - _Mottle * 0.5 + _Mottle * m);
+                float ao = i.tint.a;
+                float3 base = _TissueColor.rgb * i.tint.rgb * (1.0 - _Mottle * 0.5 + _Mottle * m);
                 // Capillary blush in patches.
                 base *= lerp(1.0, float3(1.04, 0.86, 0.88), mucosa * smoothstep(0.45, 0.8, noise(p * 0.35 + 5.0)));
                 // Vessels: fine bright-red superficial ones, broader bluish-purple deeper ones seen through the mucosa.
@@ -99,10 +100,15 @@ Shader "SeptoMentor/EndoTissue"
                 // Diffuse with wrap and a red sub-surface glow at grazing angles (light scattered inside the tissue).
                 float wrap = saturate((ndv + 0.35) / 1.35);
                 float3 sss = base * float3(0.55, 0.12, 0.1) * pow(1.0 - ndv, 2.0) * mucosa;
+                // Recesses: less light scattered back in from the surrounding walls; deep crevices turn a darker, redder hue.
+                float occ = lerp(0.45, 1.0, ao);
+                base *= lerp(float3(0.8, 0.6, 0.62), float3(1, 1, 1), ao) * occ;
+                sss *= 0.5 + 0.5 * ao;
                 // Wet film: patches of thicker mucus are glossier and slightly milky; a tight highlight plus a broad sheen and a Fresnel rim.
                 float film = saturate(i.look.y) * (0.6 + 0.8 * smoothstep(0.35, 0.75, noise(p * 0.25 + 17.0)));
                 base = lerp(base, base + float3(0.05, 0.05, 0.06), saturate((film - 1.0) * 0.6) * mucosa);
                 float spec = _Wetness * film * (pow(ndv, _Shininess) + 0.1 * pow(ndv, _Shininess * 0.15)) + _Wetness * 0.12 * film * pow(1.0 - ndv, 5.0);
+                spec *= 0.55 + 0.45 * ao;
                 float3 col = (base * (0.06 + wrap) + sss + spec) * atten;
                 col = 1.0 - exp(-col * 1.4);                        // soft shoulder, like the camera's
                 return fixed4(col, 1);

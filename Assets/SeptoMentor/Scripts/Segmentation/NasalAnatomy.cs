@@ -25,7 +25,11 @@ namespace SeptoMentor
     /// (+X patient-left, +Y superior, +Z posterior), so the nostril sits exactly where the OR head's is.
     /// Surface detail: superior turbinate, uncinate process and agger nasi, septal swell body, Hasner's valve,
     /// Eustachian orifices, adenoid tissue, corrugated turbinates and mucosal micro-relief; per-vertex colour
-    /// (Little's area, congested turbinates, paler upper walls, mucus) and vessel / wetness weights in uv.
+    /// (Little's area, congested turbinates, paler upper walls, mucus, pale thin lining in sinuses and cells), ambient
+    /// occlusion in its alpha and vessel / wetness weights in uv.
+    /// Sinuses (FESS): pyramidal maxillary sinus sharing the lateral nasal wall, fan-shaped frontal sinus over an hourglass
+    /// frontal recess, box-shaped sphenoid sinus with the sella, carotid and optic prominences, ethmoid labyrinth under a
+    /// sloping skull base; oval ostia through thin bone.
     /// Generated in the editor (SceneBuilder) and stored as mesh assets.
     /// </summary>
     public static class NasalAnatomy
@@ -160,12 +164,16 @@ namespace SeptoMentor
             new Vector3(-16.4f, 14.5f, -50.5f), new Vector3(-16.6f, 10f, -48.5f), new Vector3(-16.8f, 5f, -46f),
             new Vector3(-17.0f, 0.5f, -43f), new Vector3(-17.2f, -3.5f, -39.5f), new Vector3(-17.4f, -6.5f, -35.5f),
         };
+        // Frontal recess: from the middle meatus behind the agger nasi up and forward to the frontal ostium (narrowest), then
+        // flaring into the funnel of the sinus floor - an hourglass.
         static readonly Vector3[] FrontalRecess =
         {
-            new Vector3(-14.2f, 14f, -44f), new Vector3(-14.4f, 21f, -50f), new Vector3(-14.2f, 27f, -57f),
-            new Vector3(-13.6f, 32f, -63f), new Vector3(-13.4f, 36f, -66.5f),
+            new Vector3(-14.2f, 14f, -44f), new Vector3(-14.2f, 19f, -49f), new Vector3(-13.4f, 23.4f, -54.5f),
+            new Vector3(-12.6f, 26.5f, -59.5f),
         };
-        static readonly float[] FrontalRecessR = { 2.2f, 2.0f, 1.8f, 1.6f, 1.6f };
+        static readonly float[] FrontalRecessR = { 2.6f, 2.4f, 1.6f, 3f };
+        const float RecessFlat = 1.35f;
+        static readonly Vector3[] FrontalRecessScaled = Array.ConvertAll(FrontalRecess, v => new Vector3(v.x * RecessFlat, v.y, v.z));
         // Web from the free edge to its attachment on the lateral wall, as a plate in a frame turned about S
         // (L' = 0.66 L - 0.75 P, P' = -0.75 L - 0.66 P), so the plate is thin along L'.
         const float WebNl = 0.66f, WebNp = -0.75f, WebTl = -0.75f, WebTp = -0.66f;
@@ -227,7 +235,7 @@ namespace SeptoMentor
         }
 
         /// <summary>Sphenoethmoidal recess: part of the nose, medial to the superior turbinate, in front of the sphenoid ostium.</summary>
-        static float Recess(float l, float s, float p) => Ell(l, s, p, -5f, 14f, -1.5f, 3f, 5f, 3.5f);
+        static float Recess(float l, float s, float p) => Ell(l, s, p, -5f, 15f, -1f, 3f, 5.5f, 3.8f);
 
         // ---- ethmoid labyrinth: a honeycomb of air cells with thin bony septa (Voronoi cells of a jittered seed grid)
         const float CellSpacing = 4.8f, CellJitter = 0.35f, SeptumHalf = 0.4f;
@@ -275,8 +283,11 @@ namespace SeptoMentor
         /// </summary>
         static float EthCells(float l, float s, float p, float[] c)
         {
-            if (l < -26.5f || l > -13f || s < 0.5f || s > 21.5f || p < -51.5f || p > -2.5f) return 50f;
-            float r = Mathf.Max(Mathf.Max(l - (Lat0(s, p) - 1.1f), -25.5f - l), Mathf.Max(Mathf.Max(s - 21f, 1f - s), Mathf.Max(-51f - p, p + 3f)));
+            if (l < -29f || l > -13f || s < 0.5f || s > 27f || p < -51.5f || p > -2.5f) return 50f;
+            // Lamina papyracea and fovea ethmoidalis with a slightly scalloped bony surface.
+            float bump = 0.6f * (Noise(s / 4f, p / 4f, 3.3f) - 0.5f);
+            float r = Mathf.Max(Mathf.Max(l - (Lat0(s, p) - 1.1f), LaminaPapyracea(p) + 0.5f + bump - l),
+                                Mathf.Max(Mathf.Max(s - (SkullBase(p) - 0.5f + bump), 1f - s), Mathf.Max(-51f - p, p + 3f)));
             r = Mathf.Max(r, Mathf.Max(0.9f - c[(int)Wall.Bulla], 0.9f - c[(int)Wall.Agger]));
             r = Mathf.Max(r, Mathf.Max(1.1f - Mathf.Abs(p + 17f), 0.9f - c[(int)Wall.Ostia]));
             r = Mathf.Max(r, Mathf.Max(0.9f - c[(int)Wall.MaxSinus], Mathf.Max(0.9f - c[(int)Wall.Frontal], 0.9f - c[(int)Wall.Sphenoid])));
@@ -285,22 +296,31 @@ namespace SeptoMentor
             return Mathf.Max(r, SeptumHalf - (d2 - d1) * 0.5f);
         }
 
+        /// <summary>
+        /// The openings of the sinuses: short oval channels through thin bone (not drilled holes), each widening into its sinus.
+        /// Maxillary: high on the medial antral wall, at the floor of the ethmoid infundibulum behind the uncinate process,
+        /// oval along P, with a small posterior fontanelle (accessory) ostium below the bulla. Bulla: the retrobullar opening.
+        /// Sphenoid: a vertical oval on the anterior wall, medial to the superior turbinate, above the sphenoethmoidal recess.
+        /// Frontal: the hourglass frontal recess behind the agger nasi, narrowest at the ostium, flaring into the sinus floor.
+        /// </summary>
         static float Ostia(float l, float s, float p)
         {
             var q = new Vector3(l, s, p);
-            float o = Capsule(q, new Vector3(-18.6f, -3.2f, -39f), new Vector3(-24.5f, -4f, -40f), 1.5f, 1.5f);          // maxillary natural ostium
-            o = Mathf.Min(o, Capsule(q, new Vector3(-18.5f, -6.6f, -30.5f), new Vector3(-24f, -7f, -31f), 0.9f, 0.9f));   // accessory ostium
+            float o = SMin(Ell(l, s, p, -20.5f, -2.6f, -38.8f, 2.4f, 1.5f, 2.9f), Ell(l, s, p, -22.6f, -3.6f, -39f, 1.6f, 2.6f, 3.6f), 1f);  // maxillary natural ostium
+            o = Mathf.Min(o, Ell(l, s, p, -20.4f, -6.4f, -31f, 2.2f, 0.9f, 1.4f));                                     // accessory (fontanelle) ostium
             o = Mathf.Min(o, Capsule(q, new Vector3(-17.4f, 10.6f, -25.6f), new Vector3(-19.4f, 9.2f, -27.6f), 1f, 1f));  // bulla ostium
-            o = Mathf.Min(o, SMin(Recess(l, s, p), Capsule(q, new Vector3(-5f, 14f, 0.5f), new Vector3(-6f, 15f, 5.5f), 1.4f, 1.4f), 1f));   // sphenoid ostium
+            o = Mathf.Min(o, SMin(Recess(l, s, p), Ell(l, s, p, -5f, 18f, 3.4f, 1.5f, 2.4f, 2f), 1f));                  // sphenoid ostium
             if (s > 10f && p < -38f && l < -8f)
             {
+                // Evaluated with L stretched so the recess is a slit (narrow mediolaterally, wide front to back).
+                var qs = new Vector3(l * RecessFlat, s, p);
                 float fr = float.MaxValue;
                 for (int i = 0; i + 1 < FrontalRecess.Length; i++)
                 {
-                    float c = Capsule(q, FrontalRecess[i], FrontalRecess[i + 1], FrontalRecessR[i], FrontalRecessR[i + 1]);
-                    fr = fr == float.MaxValue ? c : SMin(fr, c, 1f);
+                    float c = Capsule(qs, FrontalRecessScaled[i], FrontalRecessScaled[i + 1], FrontalRecessR[i], FrontalRecessR[i + 1]);
+                    fr = fr == float.MaxValue ? c : SMin(fr, c, 1.2f);
                 }
-                o = Mathf.Min(o, fr);   // frontal recess up to the frontal ostium
+                o = Mathf.Min(o, fr / RecessFlat);   // frontal recess up to the frontal ostium
             }
             return o;
         }
@@ -308,11 +328,100 @@ namespace SeptoMentor
         /// <summary>Ostia the resident has to find (operated side, work frame mm), with the radius that counts as "there".</summary>
         public static readonly (string key, string name, Vector3 at, float radius)[] OstiumTargets =
         {
-            ("maxillary", "maxillary sinus ostium", new Vector3(-19.6f, -3.3f, -39.2f), 3.2f),
+            ("maxillary", "maxillary sinus ostium", new Vector3(-20.2f, -2.8f, -38.8f), 3.2f),
             ("ethmoid", "ethmoid bulla ostium", new Vector3(-17.6f, 10.4f, -25.8f), 3f),
-            ("sphenoid", "sphenoid sinus ostium", new Vector3(-5.4f, 14.4f, 1.5f), 3f),
-            ("frontal", "frontal recess / ostium", new Vector3(-14.1f, 26f, -56f), 3.5f),
+            ("sphenoid", "sphenoid sinus ostium", new Vector3(-5.2f, 17.6f, 2f), 3f),
+            ("frontal", "frontal recess / ostium", new Vector3(-13.4f, 23.4f, -54.5f), 3.5f),
         };
+
+        /// <summary>Lateral limit of the ethmoid labyrinth (lamina papyracea, the orbit beyond), L mm: wider behind.</summary>
+        public static float LaminaPapyracea(float p) => -25f - 0.045f * (p + 50f);
+
+        /// <summary>Ethmoid roof (fovea ethmoidalis) above the labyrinth, S mm: falls backward, above the cribriform plate (S 22).</summary>
+        public static float SkullBase(float p) => 25.5f - 0.06f * (p + 50f);
+
+        /// <summary>
+        /// Maxillary sinus (mm, negative inside): a pyramid on its side. Its medial wall is the lateral nasal wall itself (2 mm of
+        /// bone and mucosa, stepping out with the middle meatus); the roof is the orbital floor with the infraorbital canal
+        /// ridge; the anterior (facial) wall dips in at the canine fossa; the floor bowls below the nasal floor over the
+        /// molar roots; the apex runs into the zygomatic recess; the posterior wall bulges forward (tuberosity).
+        /// </summary>
+        public static float MaxillarySinus(float l, float s, float p)
+        {
+            if (l > -12f || l < -54f || s < -40f || s > 13f || p < -72f || p > -14f) return 8f;
+            float medial = l - (Lat0(s, p) - 2.2f);
+            float lateral = -44f + 0.03f * (s + 7f) * (s + 7f) - l;
+            float floor = -29f + 0.006f * (p + 44f) * (p + 44f) + 0.01f * (l + 31f) * (l + 31f) - s;
+            float roofS = 2.2f + 0.05f * (-20f - l) - 1.5f * Mathf.Exp(-(l + 31f) * (l + 31f) / 5f) * Window(p, -60f, -28f, 2f);
+            float roof = s - roofS;
+            float front = -61f + 0.02f * (l + 31f) * (l + 31f) + 4f * Mathf.Exp(-((l + 34f) * (l + 34f) / 50f + (s + 12f) * (s + 12f) / 45f)) - p;
+            float back = p - (-25f - 0.03f * (l + 29f) * (l + 29f) - 0.05f * (s + 10f) * (s + 10f) / 4f);
+            float d = SMax(SMax(medial, lateral, 4f), SMax(floor, roof, 4f), 3f);
+            d = SMax(d, SMax(front, back, 4f), 3f);
+            return d - 0.5f * (Noise(l / 5f, s / 5f, p / 5f) - 0.5f);
+        }
+
+        /// <summary>
+        /// Frontal sinus (mm, negative inside): a fan in the frontal bone - narrow at its floor, where the ostium sits
+        /// posteromedially, widening upward and laterally over the orbit; thin intersinus septum at the midline, anterior table
+        /// under the forehead, posterior table toward the anterior cranial fossa, scalloped dome.
+        /// </summary>
+        public static float FrontalSinus(float l, float s, float p)
+        {
+            if (l > 4f || l < -42f || s < 17f || p < -92f || p > -48f) return 8f;
+            float medial = l + 1f;
+            float lateral = Mathf.Max(-30f, -15f - 1f * (s - 26f)) - l;
+            float floor = 25.4f + 0.035f * (l + 12f) * (l + 12f) - s;
+            float top = s - (48f - 0.012f * (l + 11f) * (l + 11f) - 2.2f * Mathf.Abs(Mathf.Sin(l * 0.32f)));
+            float front = Mathf.Max(-79f, -71.5f - 0.5f * (s - 26f)) - p;
+            float back = p - (-58.5f - 0.2f * (s - 26f));
+            float d = SMax(SMax(medial, lateral, 3f), SMax(floor, top, 4f), 3f);
+            return SMax(d, SMax(front, back, 3f), 2.5f) - 0.6f * (Noise(l / 4f, s / 4f, p / 4f) - 0.5f);
+        }
+
+        /// <summary>
+        /// Sphenoid sinus (mm, negative inside): a rounded box in the sphenoid body behind the sphenoethmoidal recess, its floor
+        /// following the nasopharyngeal roof down and back; the intersinus septum at the midline (with the other side), the
+        /// sella turcica bulging into the posterosuperior roof, the carotid (posterior) and optic (superior) prominences on the
+        /// lateral wall with the opticocarotid recess between them.
+        /// </summary>
+        public static float SphenoidSinus(float l, float s, float p)
+        {
+            if (l > 3f || l < -24f || s < 0f || s > 38f || p < -4f || p > 32f) return 8f;
+            float medial = l + 0.8f, lateral = -16f - l;
+            float floor = Mathf.Max(8f, 15.8f - 0.55f * (p - 5f)) - s, roof = s - 29f;
+            float front = 4.4f - p, back = p - 24f;
+            float d = SMax(SMax(medial, lateral, 3f), SMax(floor, roof, 3f), 3f);
+            d = SMax(d, SMax(front, back, 3f), 3f);
+            var q = new Vector3(l, s, p);
+            float sella = Ell(l, s, p, 0f, 32.5f, 18.5f, 9f, 6.5f, 6.5f);
+            float carotid = Capsule(q, new Vector3(-16.6f, 9f, 21f), new Vector3(-16.6f, 25f, 14f), 2.8f, 2.6f);
+            float optic = Capsule(q, new Vector3(-17.2f, 25.5f, 5f), new Vector3(-15f, 26.5f, 20f), 2.2f, 2f);
+            d = SMax(d, -sella, 2f);
+            d = SMax(d, -SMin(carotid, optic, 1f), 1.5f);
+            return d - 0.4f * (Noise(l / 4f, s / 4f, p / 4f) - 0.5f);
+        }
+
+        /// <summary>
+        /// Middle turbinate (mm, negative inside): a curved plate of bone and mucosa - its medial face convex toward the
+        /// septum, the lower free edge thickened and curling laterally over the middle meatus, a rounded head in front and a
+        /// tapering tail - hanging from the vertical lamella that runs up to the cribriform plate.
+        /// </summary>
+        static float MiddleTurbinate(float l, float s, float p)
+        {
+            // Coronal section: a capsule along a curved centreline, its lower end rounded (not cut flat).
+            float sBot = -4.5f + 0.0045f * (p + 28f) * (p + 28f);
+            float head = Mathf.Exp(-(p + 41f) * (p + 41f) / 40f);
+            float HalfW(float t) => 1.5f + 0.5f * Mathf.Exp(-(t - 2.5f) * (t - 2.5f) / 8f) + 0.9f * head;
+            float Centre(float t) { float c = Mathf.Max(0f, 5.5f - t); return -9.6f - 0.14f * c * c + 0.4f * head; }
+            float tc = Mathf.Max(s - sBot, HalfW(0f));
+            float plate = Mathf.Sqrt((l - Centre(tc)) * (l - Centre(tc)) + (s - sBot - tc) * (s - sBot - tc)) - HalfW(tc);
+            float front = -43.5f - 0.25f * (s + 3f) - p;
+            float back = p - (-6f - 0.3f * (s - sBot));
+            float d = SMax(plate, SMax(SMax(front, back, 3f), s - 9f, 2f), 3f);
+            float lam = SMax(Mathf.Abs(l + 9.6f) - 1.2f, SMax(Mathf.Max(2f - s, s - 24f), Mathf.Max(-40f - p, p), 1.5f), 1.5f);
+            return SMin(d, lam, 1.5f);
+        }
 
         /// <summary>
         /// Wall distances of one cavity. side = +1: the operated cavity; -1: the other one, evaluated mirrored
@@ -336,11 +445,11 @@ namespace SeptoMentor
             float np = SMax(SMax(Mathf.Abs(l) - 15f, p - 30f, 4), SMax(-25f - s, s - (14f - (p - 5f) * 0.6f), 4), 4);
             c[(int)Wall.Pharynx] = SMax(np, PosteriorEdge(s) - p - 2f, 2);
             float rough = Noise(l / 2.2f, s / 2.2f, p / 3.5f) - 0.5f;   // corrugated turbinate mucosa
-            c[(int)Wall.InfTurb] = SMin(Ell(l, s, p, -15.5f, -17.5f, -20f, 7, 7.5f, 33), Ell(l, s, p, -14.8f, -16f, -44f, 7, 7.8f, 12), 3) - 0.7f * rough;
-            // Middle turbinate: bulbous head and body, a vertical lamella up to the skull base.
-            float mt = SMin(Ell(l, s, p, -9.4f, 2f, -24f, 3f, 7f, 17f), Ell(l, s, p, -9.6f, 5f, -37f, 3.2f, 7.5f, 5.5f), 3);
-            float lam = SMax(Mathf.Abs(l + 9.6f) - 1.2f, SMax(Mathf.Max(2f - s, s - 24f), Mathf.Max(-40f - p, p), 1.5f), 1.5f);
-            c[(int)Wall.MidTurb] = SMin(mt, lam, 1.5f) - 0.4f * rough;
+            // Inferior turbinate: its lower edge hangs free over the inferior meatus (carved out under its lateral half).
+            float it = SMin(Ell(l, s, p, -15.5f, -17.5f, -20f, 7, 7.5f, 33), Ell(l, s, p, -14.8f, -16f, -44f, 7, 7.8f, 12), 3);
+            it = SMax(it, -Ell(l, s, p, -15.6f, -23.6f, -33f, 2.8f, 3.4f, 24f), 1.2f);
+            c[(int)Wall.InfTurb] = it - 0.7f * rough;
+            c[(int)Wall.MidTurb] = MiddleTurbinate(l, s, p) - 0.4f * rough;
             // Basal lamella: the middle turbinate's attachment turning laterally to the lamina papyracea (anterior / posterior ethmoid).
             c[(int)Wall.BasalLam] = SMax(Mathf.Abs(p + 17f) - 0.7f, SMax(Mathf.Max(-l - 24f, l + 10f), Mathf.Max(1.5f - s, s - 22f), 1.2f), 1.2f);
             c[(int)Wall.Torus] = Ell(Mathf.Abs(l), s, p, 14, -8, 20, 4, 6, 6);
@@ -350,11 +459,11 @@ namespace SeptoMentor
             c[(int)Wall.Bulla] = Ell(l, s, p, -19.6f, 6f, -30.5f, 4.4f, 5.6f, 6f);
             c[(int)Wall.Adenoid] = Ell(l, s, p, 0, 10, 24, 13, 6, 7) - 1.4f * (Noise(l / 2f, s / 2f, p / 2f) - 0.5f);
             // Air spaces: the sinuses, ethmoid cells and the openings that join them to the nose.
-            c[(int)Wall.MaxSinus] = Ell(l, s, p, -34.5f, -8.5f, -40f, 11.5f, 13.5f, 17f);
+            c[(int)Wall.MaxSinus] = MaxillarySinus(l, s, p);
             c[(int)Wall.BullaCell] = Ell(l, s, p, -20.3f, 6f, -30.5f, 3.2f, 4.4f, 4.7f);
             c[(int)Wall.AggerCell] = Ell(l, s, p, -18.6f, 15.2f, -52.5f, 2.1f, 2.9f, 3f);
-            c[(int)Wall.Sphenoid] = SMax(Ell(l, s, p, -7f, 17f, 13f, 6f, 6f, 9f), -Ell(l, s, p, -13.2f, 14f, 16f, 1.6f, 2f, 6f), 1f);   // carotid prominence
-            c[(int)Wall.Frontal] = Ell(l, s, p, -13f, 42f, -70f, 11f, 11f, 6.5f);
+            c[(int)Wall.Sphenoid] = SphenoidSinus(l, s, p);
+            c[(int)Wall.Frontal] = FrontalSinus(l, s, p);
             c[(int)Wall.Ostia] = Ostia(l, s, p);
             c[(int)Wall.EthCells] = EthCells(l, s, p, c);
         }
@@ -508,7 +617,7 @@ namespace SeptoMentor
                 Piece pc;
                 var q = new Vector3(other ? -m.x : m.x, m.y, m.z);   // this side's work frame
                 string fess = FessGroup((Wall)best, q);
-                if (fess == null && (Wall)best == Wall.Lateral && q.y > 1.5f && q.y < 21f && q.z > -51f && q.z < -3f)
+                if (fess == null && (Wall)best == Wall.Lateral && q.y > 1.5f && q.y < 26f && q.z > -51f && q.z < -3f)
                 {
                     // The meatal wall in front of an ethmoid cell opens with it.
                     var inner = q + new Vector3(-1.6f, 0, 0);
@@ -611,11 +720,11 @@ namespace SeptoMentor
                 return "Antrostomy_" + (q.z < -41f ? 0 : q.z < -37f ? 1 : 2);
             if ((w == Wall.Sphenoid || w == Wall.Ostia || w == Wall.Pharynx || w == Wall.Roof || w == Wall.Lateral || w == Wall.SupTurb) &&
                 (q - SphenoidotomyCentre).sqrMagnitude < 25f)
-                return "Sphenoid_" + (q.y > 14.5f ? 0 : 1);
+                return "Sphenoid_" + (q.y > 17.5f ? 0 : 1);
             return null;
         }
 
-        public static readonly Vector3 AntrostomyCentre = new Vector3(-21f, -3.6f, -39.5f), SphenoidotomyCentre = new Vector3(-5.5f, 14.5f, 2.5f);
+        public static readonly Vector3 AntrostomyCentre = new Vector3(-21f, -3.6f, -39.5f), SphenoidotomyCentre = new Vector3(-5.3f, 17.5f, 3.2f);
 
         static string SinusPiece(Wall w)
         {
@@ -629,7 +738,11 @@ namespace SeptoMentor
             return null;
         }
 
-        /// <summary>Per-vertex look (computed in the work frame), then mirrored to the patient's left side.</summary>
+        /// <summary>
+        /// Per-vertex look (computed in the work frame), then mirrored to the patient's left side. Colour alpha carries ambient
+        /// occlusion from the field (meatuses, ostia, cell floors and the depths of recesses darker, as the endoscope sees them);
+        /// mucosa that lines a sinus or an ethmoid cell gets the thin, pale sinus look.
+        /// </summary>
         static void Finish(Piece pc)
         {
             pc.look = pc.name.Contains("Vibrissae") ? Look.Plain
@@ -639,18 +752,65 @@ namespace SeptoMentor
                     : pc.name.StartsWith("Cartilage") || pc.name == "Incision_Bed" ? Look.Cartilage
                     : Look.Mucosa;
             bool right = pc.name.StartsWith("Right_") || pc.name.StartsWith("Fess_R_");
-            for (int i = 0; i < pc.verts.Count; i++)
+            bool occlusion = pc.look != Look.Plain && pc.look != Look.Cartilage && !pc.name.StartsWith("Contralateral");
+            int n = pc.verts.Count;
+            var colors = new Color[n]; var uvs = new Vector2[n];
+            var lining = new Color(SinusLining.r / Mucosa.r, SinusLining.g / Mucosa.g, SinusLining.b / Mucosa.b);
+            System.Threading.Tasks.Parallel.For(0, n, () => new[] { new float[(int)Wall.Count], new float[(int)Wall.Count] }, (i, _, buf) =>
             {
-                var w = pc.verts[i] * 1000f;
+                var at = pc.verts[i] * 1000f;   // both cavities, work frame
+                var w = at;
                 if (right) w.x = -w.x;   // shade the right cavity like its mirror image
-                Shade(pc.look, w, out var c, out var uv);
-                pc.colors.Add(c);
-                pc.uvs.Add(uv);
-                pc.verts[i] = FromWork(pc.verts[i]);
-            }
+                var look = pc.look;
+                float ao = 1f;
+                if (occlusion)
+                {
+                    var nrm = AirNormal(at, buf);
+                    ao = Occlusion(at, nrm, buf);
+                    if (look == Look.Mucosa && LinesSinus(at + nrm * 1.2f, buf)) look = Look.Sinus;
+                }
+                Shade(look, w, out var c, out var uv);
+                if (look == Look.Sinus && pc.look == Look.Mucosa) c *= lining;
+                c.a = ao;
+                colors[i] = c; uvs[i] = uv;
+                return buf;
+            }, _ => { });
+            for (int i = 0; i < n; i++) pc.verts[i] = FromWork(pc.verts[i]);
+            pc.colors.AddRange(colors);
+            pc.uvs.AddRange(uvs);
             if (Mirror < 0)
                 for (int t = 0; t < pc.tris.Count; t += 3) { int b = pc.tris[t + 1]; pc.tris[t + 1] = pc.tris[t + 2]; pc.tris[t + 2] = b; }
         }
+
+        static float AirAt(Vector3 q, float[][] buf, int mode = 0) => Air(q.x, q.y, q.z, buf[0], buf[1], out _, mode);
+
+        /// <summary>Unit normal into the air (down the field's gradient).</summary>
+        static Vector3 AirNormal(Vector3 q, float[][] buf)
+        {
+            const float h = 0.4f;
+            var g = new Vector3(AirAt(q + Vector3.right * h, buf) - AirAt(q - Vector3.right * h, buf),
+                                AirAt(q + Vector3.up * h, buf) - AirAt(q - Vector3.up * h, buf),
+                                AirAt(q + Vector3.forward * h, buf) - AirAt(q - Vector3.forward * h, buf));
+            return g.sqrMagnitude > 1e-10f ? -g.normalized : Vector3.zero;
+        }
+
+        static readonly float[] AoStep = { 0.7f, 1.6f, 3.2f, 5.5f }, AoWeight = { 0.3f, 0.3f, 0.25f, 0.15f };
+
+        /// <summary>Ambient occlusion 0..1: how much tissue crowds the air in front of the surface (field samples along the normal).</summary>
+        static float Occlusion(Vector3 q, Vector3 n, float[][] buf)
+        {
+            if (n == Vector3.zero) return 1f;
+            float occ = 0f;
+            for (int i = 0; i < AoStep.Length; i++)
+            {
+                float h = AoStep[i], f = AirAt(q + n * h, buf);
+                occ += AoWeight[i] * Mathf.Clamp01((h + f) / h);   // in open air f = -h
+            }
+            return Mathf.Clamp01(1f - occ);
+        }
+
+        /// <summary>Whether the air just off the surface belongs to a sinus or an ethmoid cell, not the nose.</summary>
+        static bool LinesSinus(Vector3 q, float[][] buf) => AirAt(q, buf) < -0.2f && AirAt(q, buf, 1) > 0.3f;
 
         /// <summary>
         /// Colour multiplier (applied to the part's tint) and (vessel density, wetness): Little's area redder and
