@@ -29,7 +29,7 @@ namespace SeptoMentor
         public Transform PatientHead { get; private set; }
 
         /// <summary>Nostril entrance in the head frame (phantom geometry).</summary>
-        public static Vector3 Nostril(bool right) => new Vector3(right ? 0.0076f : -0.0076f, -0.0283f, 0.088f);
+        public static Vector3 Nostril(bool right) => new Vector3(right ? 0.007f : -0.007f, -0.0285f, 0.0858f);
 
         Transform _root;
         Task<SurfaceNets> _headTask;
@@ -69,6 +69,9 @@ namespace SeptoMentor
         void Update()
         {
             UpdateLife();
+            // Hand-held shafts show through the skin near the nostrils (XRayShaft).
+            var focus = PatientHead.TransformPoint((Nostril(true) + Nostril(false)) * 0.5f);
+            Shader.SetGlobalVector("_XRayFocus", new Vector4(focus.x, focus.y, focus.z, 1f));
             if (_headTask == null || !_headTask.IsCompleted) return;
             if (_headTask.Status == TaskStatus.RanToCompletion) AddHead(_headTask.Result.ToMesh("PatientHead"));
             else Debug.LogError("[SeptoMentor] head surface failed: " + _headTask.Exception);

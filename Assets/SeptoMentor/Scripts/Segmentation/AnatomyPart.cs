@@ -19,6 +19,9 @@ namespace SeptoMentor
         [Tooltip("Generated anatomy: the mesh carries colour (vertex colours) and vessel / wetness weights (uv).")]
         public bool vertexLook;
 
+        [Tooltip("Instruments: polished steel (reflects the lit walls) instead of tissue.")]
+        [Range(0, 1)] public float metal;
+
         [Tooltip("False until an expert has confirmed what this mesh segment is.")]
         public bool mappingConfirmed;
 
@@ -28,6 +31,7 @@ namespace SeptoMentor
         static readonly int TissueColorId = Shader.PropertyToID("_TissueColor");
         static readonly int WetnessId = Shader.PropertyToID("_Wetness");
         static readonly int VertexLookId = Shader.PropertyToID("_VertexLook");
+        static readonly int MetalId = Shader.PropertyToID("_Metal");
 
         void Awake() => Apply();
 
@@ -40,6 +44,7 @@ namespace SeptoMentor
             mpb.SetColor(TissueColorId, tissueColor);
             mpb.SetFloat(WetnessId, wetness);
             mpb.SetFloat(VertexLookId, vertexLook ? 1f : 0f);
+            mpb.SetFloat(MetalId, metal);
             Rend.SetPropertyBlock(mpb);
         }
 

@@ -8,8 +8,10 @@ namespace SeptoMentor
     /// The resident's RIGHT hand works the instruments (the left holds the endoscope).
     /// The procedure's tray lies on the Mayo stand (septoplasty: scalpel, Freer, through-cutting forceps, Frazier suction;
     /// FESS: sickle knife, ball probe, Freer, Blakesley straight and 45 up, backbiter, microdebrider, curved suction):
-    /// reach over one and press the grip to take it, press the grip again to hand it back
-    /// (B swaps to the next one without reaching). The trigger closes the forceps jaws (bite), runs the suction and
+    /// reach over one and press the grip to take it; to hand it back press the grip again over the tray
+    /// (squeezing the grip while operating does not drop it; B swaps to the next one without reaching).
+    /// Near the face NostrilGuide leads the instrument into the nostril and keeps its shaft in it, and the part
+    /// hidden in the nose shows through the skin (XRayShaft). The trigger closes the forceps jaws (bite), runs the suction and
     /// the microdebrider. The instrument in the hand is mirrored into the anatomy (VirtualInstrument), so it appears in
     /// the endoscope image exactly where it is in the patient's nose, and SeptoplastySim / FessSim make the tissue respond.
     /// </summary>
@@ -49,6 +51,12 @@ namespace SeptoMentor
 
         Slot[] _tools;
         int _held = -1, _hover = -1;
+        readonly NostrilGuide _guide = new NostrilGuide();
+        Material _xray;
+        float _nextGripHint;
+        bool _rimBuzz;
+        /// <summary>Instrument shaft radius for the nostril (m).</summary>
+        const float ShaftRadius = 0.0015f;
         bool _grip, _trigger;
         float[] _dist;
         Transform _trayRoot;
@@ -132,6 +140,8 @@ namespace SeptoMentor
         {
             _held = i;
             _tools[i].returning = -1;
+            SetXRay(_tools[i], true);
+            _guide.Reset();
             Haptics.Pulse(hand, 0.4f, 0.04f);
             Hint?.Invoke("tool_" + Tools[i], InstrumentModels.DisplayName(Tools[i]) + Usage(Tools[i]), Severity.Info);
         }
@@ -163,7 +173,9 @@ namespace SeptoMentor
             var t = _tools[_held];
             t.from = new Pose(t.model.root.position, t.model.root.rotation);
             t.returning = 0;
+            SetXRay(t, false);
             _held = -1;
+            _guide.Reset();
             Haptics.Pulse(hand, 0.25f, 0.03f);
         }
 
@@ -181,6 +193,7 @@ namespace SeptoMentor
             {
                 if (provider != null && provider.Instrument != null) provider.Instrument.SetExternal(null);
                 smoothing.Reset();
+                _guide.Reset();
                 return;
             }
 
@@ -199,7 +212,15 @@ namespace SeptoMentor
             Hover(wPos);
             if (gripDown)
             {
-                if (_held >= 0) Release();
+                if (_held >= 0)
+                {
+                    if (OverTray(wPos)) Release();
+                    else if (Time.time > _nextGripHint)
+                    {
+                        _nextGripHint = Time.time + 20f;
+                        Hint?.Invoke("tool_return", "To put the instrument down, press the grip over the tray (or B for the next one).", Severity.Tip);
+                    }
+                }
                 else if (_hover >= 0) Take(_hover);
             }
 
@@ -210,6 +231,7 @@ namespace SeptoMentor
 
             var t = _tools[_held];
             var tip = wPos + wRot * new Vector3(0, 0, t.model.grip);   // the hand holds each instrument where a surgeon would
+            tip += GuideIntoNostril(tip, wRot * Vector3.forward);
             t.model.root.SetPositionAndRotation(tip, wRot);
             t.model.SetJaw(1f - trig);
             t.model.Spin(trigNow, Time.deltaTime);
@@ -224,6 +246,43 @@ namespace SeptoMentor
                 vi.SetExternalPose(local, localRot);
                 if (Procedure == Procedure.Fess) { if (fess != null) fess.Tick(Held, local, localRot, trigNow, trigDown, hand); }
                 else if (sim != null) sim.Step(InstrumentModels.LabelOf(Held), local, trigNow, trigDown, hand);
+            }
+        }
+
+        /// <summary>Shift (world) that keeps the instrument's shaft in the nostril; haptic click on entering, buzz on the rim.</summary>
+        Vector3 GuideIntoNostril(Vector3 tip, Vector3 dir)
+        {
+            var ph = room != null ? room.PatientHead : null;
+            if (ph == null) return Vector3.zero;
+            var shift = _guide.Apply(ph.InverseTransformPoint(tip), ph.InverseTransformDirection(dir), ShaftRadius, Time.deltaTime, out bool entered);
+            if (entered) Haptics.Pulse(hand, 0.35f, 0.025f);
+            bool rim = _guide.RimPress > 0.5f;
+            if (rim && !_rimBuzz) Haptics.Pulse(hand, 0.2f, 0.02f);   // levering against the ala / columella
+            _rimBuzz = rim;
+            return ph.TransformVector(shift);
+        }
+
+        /// <summary>Within reach of the Mayo stand's towel (where instruments are put down).</summary>
+        bool OverTray(Vector3 handPos)
+        {
+            foreach (var s in _tools)
+                if (Vector3.Distance(handPos, s.rest.position) < 0.22f) return true;
+            return false;
+        }
+
+        /// <summary>The held instrument's parts hidden in the nose show through the skin.</summary>
+        void SetXRay(Slot t, bool on)
+        {
+            if (on && _xray == null)
+            {
+                var sh = Shader.Find("SeptoMentor/XRayShaft");
+                if (sh == null) return;
+                _xray = new Material(sh);
+            }
+            foreach (var r in t.model.root.GetComponentsInChildren<MeshRenderer>())
+            {
+                var m = r.sharedMaterial;
+                r.sharedMaterials = on ? new[] { m, _xray } : new[] { m };
             }
         }
 

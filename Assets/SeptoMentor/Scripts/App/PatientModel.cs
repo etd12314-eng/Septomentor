@@ -7,7 +7,8 @@ namespace SeptoMentor
     /// The patient on the OR table, meshed from signed-distance fields (baked by SceneBuilder; OperatingRoom falls back
     /// to meshing the head at runtime). Both meshes are in OperatingRoom's head frame: x = patient's right,
     /// y = superior, z = anterior, metres; phantom (L, S, P) mm = (-x, y, -z) * 1000.
-    ///   Head  - CtPhantom.SkinSdf (face, nose, nostrils into the endoscopic anatomy), vertex-coloured skin.
+    ///   Head  - CtPhantom.SkinSdf (face, nose, nostrils into the endoscopic anatomy), vertex-coloured skin with ambient
+    ///           occlusion in the colour alpha and oiliness in uv.y (ORSkin; EndoTissue reads it as the wet film).
     ///   Drape - the body (shoulders, chest, tucked arms, pelvis, legs, feet) under a surgical drape that tents
     ///           over it and spreads across the table, ending below the clavicles.
     /// </summary>
@@ -23,9 +24,52 @@ namespace SeptoMentor
                                          Vector3Int.zero, new Vector3Int(nx, ny, nz), 1, toHead).Smooth(3);
             var mesh = sn.ToMesh("PatientHead");
             var colors = new Color[sn.vertices.Count];
-            for (int v = 0; v < colors.Length; v++) colors[v] = CtPhantom.SkinTint(ToPhantom(sn.vertices[v]));
+            var uvs = new Vector2[colors.Length];
+            System.Threading.Tasks.Parallel.For(0, colors.Length, v =>
+            {
+                var q = ToPhantom(sn.vertices[v]);
+                var c = CtPhantom.SkinTint(q);
+                c.a = Occlusion(q);
+                colors[v] = c;
+                uvs[v] = new Vector2(0f, Oil(q));
+            });
             mesh.colors = colors;
+            mesh.uv = uvs;
             return mesh;
+        }
+
+        static readonly float[] AoStep = { 1.5f, 3.5f, 7f, 12f }, AoWeight = { 0.3f, 0.3f, 0.25f, 0.15f };
+
+        /// <summary>
+        /// Ambient occlusion 0..1 at a skin point (phantom mm): how much skin crowds the air in front of it (nostrils,
+        /// alar grooves, the inner canthi, the mouth line and the ear's folds come out darker).
+        /// </summary>
+        static float Occlusion(Vector3 q)
+        {
+            const float h = 0.5f;
+            var g = new Vector3(CtPhantom.SkinSdf(q + Vector3.right * h) - CtPhantom.SkinSdf(q - Vector3.right * h),
+                                CtPhantom.SkinSdf(q + Vector3.up * h) - CtPhantom.SkinSdf(q - Vector3.up * h),
+                                CtPhantom.SkinSdf(q + Vector3.forward * h) - CtPhantom.SkinSdf(q - Vector3.forward * h));
+            if (g.sqrMagnitude < 1e-10f) return 1f;
+            var n = g.normalized;   // out of the skin
+            float occ = 0f;
+            for (int i = 0; i < AoStep.Length; i++)
+            {
+                float s = AoStep[i];
+                occ += AoWeight[i] * Mathf.Clamp01((s - CtPhantom.SkinSdf(q + n * s)) / s);   // in open air the field is s
+            }
+            return Mathf.Clamp01(1f - occ);
+        }
+
+        /// <summary>Skin oiliness 0..1 (phantom mm) for the sheen: the T-zone (nose, glabella, mid-forehead) and the chin.</summary>
+        static float Oil(Vector3 q)
+        {
+            float a = Mathf.Abs(q.x), s = q.y;
+            float front = Mathf.Clamp01((-q.z - 60f) / 10f);
+            float t = Mathf.Exp(-(a * a / 150f + (s + 8f) * (s + 8f) / 700f))                       // nose
+                    + 0.7f * Mathf.Exp(-(a * a / 600f + (s - 58f) * (s - 58f) / 500f))              // forehead
+                    + 0.4f * Mathf.Exp(-(a * a / 200f + (s + 70f) * (s + 70f) / 80f));               // chin
+            return 0.3f + 0.7f * Mathf.Clamp01(t) * front;
         }
 
         /// <summary>
@@ -40,7 +84,7 @@ namespace SeptoMentor
             for (int t = 0; t < tris.Length; t += 3)
             {
                 var c = ToPhantom((v[tris[t]] + v[tris[t + 1]] + v[tris[t + 2]]) / 3f);
-                bool nostril = c.z < -78f && c.z > -97f && c.y < -15f && CtPhantom.Nostril(new Vector3(Mathf.Abs(c.x), c.y, c.z)) < 0.4f;
+                bool nostril = c.z < -76f && c.z > -97f && c.y < -12f && CtPhantom.Nostril(new Vector3(Mathf.Abs(c.x), c.y, c.z)) < 0.4f;
                 if (nostril) continue;
                 keep.Add(tris[t]); keep.Add(tris[t + 1]); keep.Add(tris[t + 2]);
             }
@@ -48,6 +92,7 @@ namespace SeptoMentor
             m.vertices = v;
             m.normals = head.normals;
             m.colors = head.colors;
+            m.uv = head.uv;
             m.SetTriangles(keep, 0);
             m.RecalculateBounds();
             return m;

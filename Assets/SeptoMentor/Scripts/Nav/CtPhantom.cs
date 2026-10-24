@@ -121,7 +121,7 @@ namespace SeptoMentor.Nav
                 ear = SMin(ear, Ell(m, new Vector3(73, 14, 4), new Vector3(4, 5, 3.5f)), 1.5f);                   // tragus
                 d = SMin(d, ear, 3);
             }
-            if (nostrils && m.x < 16 && p.y > -36 && p.y < -14 && p.z < -75) d = SSub(d, Nostril(m), 0.8f);
+            if (nostrils && m.x < 16 && p.y > -36 && p.y < -12 && p.z < -75) d = SSub(d, Nostril(m), 1.3f);
             return d;
         }
 
@@ -217,11 +217,12 @@ namespace SeptoMentor.Nav
         {
             float n = Dorsum(p);
             float lb = SMin(LowerNose(p), Ala(m), 1.2f);
-            lb = SMin(lb, Ell(m, new Vector3(13.8f, -23, -77.5f), new Vector3(3.6f, 6, 4.5f)), 2);                    // alar base, set into the cheek
+            lb = SMin(lb, Ell(m, new Vector3(14.6f, -23, -77.5f), new Vector3(3.6f, 6, 4.5f)), 2);                    // alar base, set into the cheek
             n = SMin(n, lb, 5);
             n = SMin(n, Ell(p, new Vector3(0, -16, -95), new Vector3(8.6f, 8.6f, 8.5f)), 6);                           // lobule
             n = SMin(n, Ell(m, new Vector3(4, -14, -97.5f), new Vector3(4, 4.6f, 6)), 2.5f);                            // domes
-            return SMin(n, Capsule(p, new Vector3(0, -24.8f, -95), new Vector3(0, -29, -82.5f), 3, 2.9f), 2.5f);        // columella
+            n = SMin(n, Capsule(p, new Vector3(0, -24.8f, -95), new Vector3(0, -29, -82.5f), 3, 2.9f), 2.5f);           // columella
+            return SMin(n, Ell(m, new Vector3(3.4f, -28.6f, -83.4f), new Vector3(2.2f, 1.3f, 3.2f)), 1.5f);              // medial crural footplates
         }
 
         // Dorsal line radix -> supratip; the wedge's sidewalls open at 40 -> 33 degrees from the depth axis,
@@ -249,7 +250,7 @@ namespace SeptoMentor.Nav
         static float LowerNose(Vector3 p)
         {
             float u = Mathf.Clamp01((p.y + 29) / 21);
-            float ay = -97.5f + 2.5f * u, bx = 11 - 5 * u, by = -77f, n = 2.2f;
+            float ay = -97.5f + 2.5f * u, bx = 11.8f - 5.5f * u, by = -77f, n = 2.2f;
             float x = Mathf.Abs(p.x) / bx + 1e-6f, z = Mathf.Max(by - p.z, 0) / (by - ay) + 1e-6f;
             float rho = Mathf.Pow(Mathf.Pow(x, n) + Mathf.Pow(z, n), 1 / n), k = Mathf.Pow(rho, 1 - n);
             float gx = k * Mathf.Pow(x, n - 1) / bx, gz = k * Mathf.Pow(z, n - 1) / (by - ay);
@@ -262,8 +263,8 @@ namespace SeptoMentor.Nav
         // taller than wide (S scaled by AlaTall).
         static readonly Vector4[] AlaPath =
         {
-            new Vector4(5.8f, -23.8f, -95.2f, 2.4f), new Vector4(9.4f, -24.4f, -93f, 2.7f), new Vector4(12.7f, -23.6f, -89.4f, 3.4f),
-            new Vector4(14.3f, -23.2f, -84.4f, 3.7f), new Vector4(14f, -25f, -80f, 3.3f),
+            new Vector4(6f, -24f, -95.6f, 2.4f), new Vector4(10f, -24.6f, -93.4f, 2.8f), new Vector4(13.6f, -24f, -89.6f, 3.4f),
+            new Vector4(15.2f, -23.4f, -84.4f, 3.7f), new Vector4(14.8f, -25.2f, -79.8f, 3.3f),
         };
         const float AlaTall = 1.35f;
         static Vector4[] _alaTube;
@@ -298,12 +299,18 @@ namespace SeptoMentor.Nav
             return o.ToArray();
         }
 
-        /// <summary>Teardrop nostril on the nasal base (wide end posterolateral) and the vestibule above it.</summary>
-        public static float Nostril(Vector3 m)
-        {
-            float c = Capsule(m, new Vector3(9.2f, -28.4f, -84), new Vector3(6, -26.4f, -89.5f), 2.9f, 1.7f);
-            return SMin(c, Capsule(m, new Vector3(7.6f, -27.4f, -87), new Vector3(7.3f, -22.8f, -83.5f), 2.9f, 2.7f), 2);
-        }
+        /// <summary>
+        /// Teardrop nostril on the nasal base: the wide end posterolateral at the sill, the apex anteromedial in the
+        /// soft triangle, the long axes converging toward the tip; the vestibule rises from it up and back under the ala.
+        /// </summary>
+        public static float Nostril(Vector3 m) =>
+            SMin(Naris(m), Capsule(m, new Vector3(7.6f, -27.4f, -86f), new Vector3(7.2f, -19f, -82.6f), 3f, 2.6f), 3f);
+
+        /// <summary>The opening alone (|L|, S, P mm), without the vestibule rising above it.</summary>
+        public static float Naris(Vector3 m) => Capsule(m, NarisBase, NarisApex, 3.3f, 1.8f);
+
+        // Naris (|L|, S, P mm): posterolateral end at the sill, anteromedial apex under the soft triangle.
+        static readonly Vector3 NarisBase = new Vector3(7.8f, -28.9f, -83.2f), NarisApex = new Vector3(5.3f, -27.9f, -90.4f);
 
         /// <summary>
         /// Skin colour multiplier at a skin point (L, S, P mm): lip vermilion, rosy nose and cheeks, eyebrows,
@@ -328,8 +335,9 @@ namespace SeptoMentor.Nav
             c = Color.Lerp(c, new Color(0.33f, 0.26f, 0.23f), Mathf.Clamp01(brow * 1.3f) * hairs);
             float lash = Mathf.Exp(-Sq((s - LidLine(a)) / 0.6f)) * Mathf.Exp(-Sq(Sq((a - 31) / 9.5f)));
             c = Color.Lerp(c, new Color(0.3f, 0.24f, 0.22f), 0.8f * lash * faceFront);
-            float nostril = Nostril(m), deep = Mathf.Clamp01((s + 27f) / 6f);
-            c = Color.Lerp(c, new Color(0.7f, 0.46f, 0.46f) * (1f - 0.45f * deep), Mathf.Clamp01(1f - nostril / 1.5f));
+            // Nostril: the reddish skin of the rim darkens up into the vestibule, which the lamps barely reach.
+            float nostril = Nostril(m), deep = Mathf.Pow(Mathf.Clamp01((s + 28.5f) / 7f), 0.8f);
+            c = Color.Lerp(c, Color.Lerp(new Color(0.74f, 0.5f, 0.48f), new Color(0.2f, 0.09f, 0.09f), deep), Mathf.Clamp01(1f - nostril / 1.5f));
             c = Color.Lerp(c, new Color(0.45f, 0.3f, 0.3f), Mathf.Exp(-Sq((s - mouth) / 0.6f)) * lipW * faceFront);
             c.a = 1;
             return c;

@@ -11,7 +11,8 @@ Shader "SeptoMentor/EndoTissue"
         _FalloffDist ("Light falloff distance (m)", Float) = 0.018
         _Mottle ("Mottling", Range(0, 1)) = 0.25
         _Vessels ("Mucosal vessels", Range(0, 1)) = 0.7
-        _VertexLook ("Use vertex colour + uv (vessels, wetness)", Float) = 0
+        _VertexLook ("Use vertex colour + uv (vessels, wetness) + uv2 (thinness)", Float) = 0
+        _Metal ("Steel (instruments)", Range(0, 1)) = 0
         _ClassId ("Class id (label pass only)", Float) = 0
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull (0 off: cavity walls seen from both sides; 2 back: the outer skin)", Float) = 0
     }
@@ -28,13 +29,14 @@ Shader "SeptoMentor/EndoTissue"
             #include "UnityCG.cginc"
 
             float4 _TissueColor;
-            float _Wetness, _Shininess, _FalloffDist, _Mottle, _Vessels, _VertexLook;
+            float _Wetness, _Shininess, _FalloffDist, _Mottle, _Vessels, _VertexLook, _Metal;
 
-            struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; float4 color : COLOR; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; float4 color : COLOR; float2 uv : TEXCOORD0; float2 uv2 : TEXCOORD1; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct v2f
             {
                 float4 pos : SV_POSITION; float3 wpos : TEXCOORD0; float3 wn : TEXCOORD1; float4 tint : TEXCOORD2; float2 look : TEXCOORD3;
                 float3 opos : TEXCOORD4;   // object-space position (m): the patient sits 500 m away, too far for fine world-space noise
+                float thin : TEXCOORD5;    // 0 thick wall .. 1 thin fold (light shines through it)
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -50,6 +52,7 @@ Shader "SeptoMentor/EndoTissue"
                 // Generated anatomy: per-vertex colour multiplier, alpha = ambient occlusion, uv = (vessel density, wetness). Primitives: neutral.
                 o.tint = lerp(float4(1, 1, 1, 1), v.color, _VertexLook);
                 o.look = lerp(float2(1, 1), v.uv, _VertexLook);
+                o.thin = saturate(v.uv2.x) * _VertexLook;
                 return o;
             }
 
@@ -100,6 +103,11 @@ Shader "SeptoMentor/EndoTissue"
                 // Diffuse with wrap and a red sub-surface glow at grazing angles (light scattered inside the tissue).
                 float wrap = saturate((ndv + 0.35) / 1.35);
                 float3 sss = base * float3(0.55, 0.12, 0.1) * pow(1.0 - ndv, 2.0) * mucosa;
+                // Thin folds (uncinate, turbinate edges, cell walls): the light scattered through them makes them
+                // lighter, pinker and less contrasted, with an orange glow at their edges.
+                float thin = i.thin * mucosa;
+                base = lerp(base, base * float3(1.12, 0.92, 0.86) + float3(0.05, 0.012, 0.006), thin * 0.6);
+                sss += base * float3(0.5, 0.2, 0.1) * thin * (0.4 + 0.6 * pow(1.0 - ndv, 1.5));
                 // Recesses: less light scattered back in from the surrounding walls; deep crevices turn a darker, redder hue.
                 float occ = lerp(0.45, 1.0, ao);
                 base *= lerp(float3(0.8, 0.6, 0.62), float3(1, 1, 1), ao) * occ;
@@ -110,6 +118,18 @@ Shader "SeptoMentor/EndoTissue"
                 float spec = _Wetness * film * (pow(ndv, _Shininess) + 0.1 * pow(ndv, _Shininess * 0.15)) + _Wetness * 0.12 * film * pow(1.0 - ndv, 5.0);
                 spec *= 0.55 + 0.45 * ao;
                 float3 col = (base * (0.06 + wrap) + sss + spec) * atten;
+                if (_Metal > 0)
+                {
+                    // Steel under the scope light: a dark body mirroring the red-lit walls around it (brighter at grazing
+                    // angles), a hard highlight where the curvature faces the lens and a broader satin sheen.
+                    float3 r = reflect(-v, n);
+                    float env = 0.35 + 0.65 * noise(r * 3.0 + p * 0.05);
+                    float fr = pow(1.0 - ndv, 5.0);
+                    float3 steel = _TissueColor.rgb * 0.08 * wrap
+                                 + float3(0.62, 0.24, 0.2) * env * lerp(0.3, 0.85, fr)
+                                 + _Wetness * (pow(ndv, 220.0) * 2.2 + pow(ndv, 24.0) * 0.25) * float3(1, 0.97, 0.94);
+                    col = lerp(col, steel * atten, _Metal);
+                }
                 col = 1.0 - exp(-col * 1.4);                        // soft shoulder, like the camera's
                 return fixed4(col, 1);
             }

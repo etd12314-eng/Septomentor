@@ -77,11 +77,18 @@ Shader "SeptoMentor/ORSurface"
                 float3 col = albedo * (ambient + lit * float3(1.0, 0.98, 0.93)) + spec * _Gloss;
                 if (_Metal > 0)
                 {
-                    // Stainless steel: reflect a stylised room (dark floor, pale walls, bright ceiling panels).
+                    // Stainless steel: reflect a stylised room (dark floor, pale walls with a horizon band, bright ceiling
+                    // panels) and the two lamp heads as small, very bright spots; the reflection whitens at grazing angles.
                     float3 r = reflect(-v, n);
-                    float3 room = lerp(float3(0.25, 0.27, 0.27), float3(0.62, 0.72, 0.72), smoothstep(-0.4, 0.1, r.y));
+                    float3 room = lerp(float3(0.22, 0.24, 0.24), float3(0.62, 0.72, 0.72), smoothstep(-0.35, 0.05, r.y));
+                    room *= 1.0 - 0.25 * smoothstep(0.02, 0.0, abs(r.y - 0.12));
                     room = lerp(room, float3(1.3, 1.3, 1.25), smoothstep(0.55, 0.85, r.y));
-                    col = lerp(col, albedo * room + spec * 0.6, _Metal);
+                    float3 hot = 0;
+                    if (_ORLamp0.w > 0) hot += _ORLamp0.w * pow(saturate(dot(r, normalize(_ORLamp0.xyz - i.wpos))), 600.0 * _Gloss + 40.0);
+                    if (_ORLamp1.w > 0) hot += _ORLamp1.w * pow(saturate(dot(r, normalize(_ORLamp1.xyz - i.wpos))), 600.0 * _Gloss + 40.0);
+                    float fr = pow(1.0 - saturate(dot(n, v)), 5.0);
+                    float3 refl = lerp(albedo, float3(1, 1, 1), fr) * (room + hot * 0.5);
+                    col = lerp(col, refl + spec * 0.6, _Metal);
                 }
                 col = lerp(col, _Color.rgb * 1.2, _Emission);
                 return fixed4(col, 1);

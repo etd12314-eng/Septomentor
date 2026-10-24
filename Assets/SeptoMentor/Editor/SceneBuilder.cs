@@ -122,7 +122,7 @@ namespace SeptoMentor.EditorTools
             EditorBuildSettings.scenes = AllScenes.Select(p => new EditorBuildSettingsScene(p, true)).ToArray();
             AlwaysIncludeShaders("SeptoMentor/EndoTissue", "SeptoMentor/LabelId", "SeptoMentor/MonitorComposite", "SeptoMentor/Ghost",
                                  "SeptoMentor/CtSlice", "SeptoMentor/NavGhost", "SeptoMentor/NavMarker", "SeptoMentor/ORSurface",
-                                 "SeptoMentor/ORShadow", "SeptoMentor/ORSkin", "Unlit/Texture");
+                                 "SeptoMentor/ORShadow", "SeptoMentor/ORSkin", "SeptoMentor/XRayShaft", "Unlit/Texture");
         }
 
         /// <summary>XR origin + camera. Passthrough = transparent clear + AR Foundation camera manager (Meta OpenXR).</summary>
@@ -237,6 +237,7 @@ namespace SeptoMentor.EditorTools
                     m.SetVertices(p.verts);
                     m.SetColors(p.colors);
                     m.SetUVs(0, p.uvs);
+                    m.SetUVs(1, p.uvs2);
                     m.SetTriangles(p.tris, 0);
                     m.RecalculateNormals();
                     m.RecalculateBounds();

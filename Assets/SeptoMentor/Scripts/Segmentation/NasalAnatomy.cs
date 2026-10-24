@@ -26,7 +26,7 @@ namespace SeptoMentor
     /// Surface detail: superior turbinate, uncinate process and agger nasi, septal swell body, Hasner's valve,
     /// Eustachian orifices, adenoid tissue, corrugated turbinates and mucosal micro-relief; per-vertex colour
     /// (Little's area, congested turbinates, paler upper walls, mucus, pale thin lining in sinuses and cells), ambient
-    /// occlusion in its alpha and vessel / wetness weights in uv.
+    /// occlusion in its alpha, vessel / wetness weights in uv and wall thinness (translucent folds) in uv2.
     /// Sinuses (FESS): pyramidal maxillary sinus sharing the lateral nasal wall, fan-shaped frontal sinus over an hourglass
     /// frontal recess, box-shaped sphenoid sinus with the sella, carotid and optic prominences, ethmoid labyrinth under a
     /// sloping skull base; oval ostia through thin bone.
@@ -44,6 +44,7 @@ namespace SeptoMentor
             public readonly List<int> tris = new List<int>();
             public readonly List<Color> colors = new List<Color>();
             public readonly List<Vector2> uvs = new List<Vector2>();   // x = vessel density, y = wetness (1 = default)
+            public readonly List<Vector2> uvs2 = new List<Vector2>();  // x = thinness (0 thick .. 1 a fold the light shines through)
             public Look look;
             internal readonly Dictionary<int, int> remap = new Dictionary<int, int>();   // shared SurfaceNets vertices
         }
@@ -474,7 +475,7 @@ namespace SeptoMentor
         /// </summary>
         static float Vestibule(float l, float s, float p)
         {
-            float naris = CtPhantom.Nostril(new Vector3(-l, s, p));
+            float naris = CtPhantom.Naris(new Vector3(-l, s, p));
             return SMin(naris, Capsule(new Vector3(l, s, p), VestA, VestB, 3.3f, 4.0f), 2.5f);
         }
 
@@ -754,7 +755,7 @@ namespace SeptoMentor
             bool right = pc.name.StartsWith("Right_") || pc.name.StartsWith("Fess_R_");
             bool occlusion = pc.look != Look.Plain && pc.look != Look.Cartilage && !pc.name.StartsWith("Contralateral");
             int n = pc.verts.Count;
-            var colors = new Color[n]; var uvs = new Vector2[n];
+            var colors = new Color[n]; var uvs = new Vector2[n]; var uvs2 = new Vector2[n];
             var lining = new Color(SinusLining.r / Mucosa.r, SinusLining.g / Mucosa.g, SinusLining.b / Mucosa.b);
             System.Threading.Tasks.Parallel.For(0, n, () => new[] { new float[(int)Wall.Count], new float[(int)Wall.Count] }, (i, _, buf) =>
             {
@@ -762,22 +763,24 @@ namespace SeptoMentor
                 var w = at;
                 if (right) w.x = -w.x;   // shade the right cavity like its mirror image
                 var look = pc.look;
-                float ao = 1f;
+                float ao = 1f, thin = 0f;
                 if (occlusion)
                 {
                     var nrm = AirNormal(at, buf);
                     ao = Occlusion(at, nrm, buf);
+                    thin = Thinness(at, nrm, buf);
                     if (look == Look.Mucosa && LinesSinus(at + nrm * 1.2f, buf)) look = Look.Sinus;
                 }
                 Shade(look, w, out var c, out var uv);
                 if (look == Look.Sinus && pc.look == Look.Mucosa) c *= lining;
                 c.a = ao;
-                colors[i] = c; uvs[i] = uv;
+                colors[i] = c; uvs[i] = uv; uvs2[i] = new Vector2(thin, 0f);
                 return buf;
             }, _ => { });
             for (int i = 0; i < n; i++) pc.verts[i] = FromWork(pc.verts[i]);
             pc.colors.AddRange(colors);
             pc.uvs.AddRange(uvs);
+            pc.uvs2.AddRange(uvs2);
             if (Mirror < 0)
                 for (int t = 0; t < pc.tris.Count; t += 3) { int b = pc.tris[t + 1]; pc.tris[t + 1] = pc.tris[t + 2]; pc.tris[t + 2] = b; }
         }
@@ -807,6 +810,17 @@ namespace SeptoMentor
                 occ += AoWeight[i] * Mathf.Clamp01((h + f) / h);   // in open air f = -h
             }
             return Mathf.Clamp01(1f - occ);
+        }
+
+        static readonly float[] ThinStep = { 0.7f, 1.4f, 2.2f, 3.2f };
+
+        /// <summary>How thin the wall is under the surface, 0..1: air reached again close behind it (uncinate, cell walls, fold edges).</summary>
+        static float Thinness(Vector3 q, Vector3 n, float[][] buf)
+        {
+            if (n == Vector3.zero) return 0f;
+            foreach (var h in ThinStep)
+                if (AirAt(q - n * h, buf) < 0f) return 1f - h / 3.8f;
+            return 0f;
         }
 
         /// <summary>Whether the air just off the surface belongs to a sinus or an ethmoid cell, not the nose.</summary>

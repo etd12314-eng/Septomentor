@@ -100,6 +100,7 @@ namespace SeptoMentor
                 p.structure = Current;
                 p.tissueColor = finish == InstrumentModels.Finish.Dark ? new Color(0.05f, 0.05f, 0.05f) : AnatomyPart.DefaultTint(Current);
                 p.wetness = 1.4f;
+                p.metal = finish == InstrumentModels.Finish.Dark ? 0f : 1f;
                 p.mappingConfirmed = true;   // virtual instruments are known by construction
                 p.Apply();
                 Parts.Add(p);

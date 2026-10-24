@@ -11,6 +11,8 @@ namespace SeptoMentor
     /// inside the anatomy: the head's nostril is mapped 1:1 onto the start of the anatomy's scope path.
     /// With the procedural (phantom-aligned) anatomy both nostrils are open: the scope enters whichever it is brought to.
     /// Tissue contact gives a haptic buzz (after a short tolerance); rubbing the mucosa for long raises a caution.
+    /// Near the face NostrilGuide leads the scope into the nostril and keeps it there; the shaft in the nose shows
+    /// through the skin (XRayShaft).
     /// With the controller put down (or hand-held mode off) the provider's autopilot / thumbsticks take over.
     /// </summary>
     [DefaultExecutionOrder(-100)]   // before the provider moves and renders the endoscope
@@ -37,6 +39,7 @@ namespace SeptoMentor
         public bool Touching { get; private set; }
 
         Transform _visual;
+        readonly NostrilGuide _guide = new NostrilGuide();
         Vector3 _nostril;   // head frame
         bool _sideKnown, _rightNostril;
         float _touchSince = -1, _nextBuzz, _nextHint;
@@ -99,12 +102,14 @@ namespace SeptoMentor
             Part(PrimitiveType.Cylinder, new Vector3(0, 0, 0.045f), new Vector3(0.022f, 0.012f, 0.022f), Quaternion.Euler(90, 0, 0), steel);    // coupler
             Part(PrimitiveType.Cylinder, new Vector3(0, 0.014f, 0.058f), new Vector3(0.007f, 0.012f, 0.007f), Quaternion.identity, steel);      // light post
             Part(PrimitiveType.Cylinder, new Vector3(0, 0.03f, -0.12f), new Vector3(0.008f, 0.15f, 0.008f), Quaternion.Euler(-80, 0, 0), cable); // cable
-            Part(PrimitiveType.Cylinder, new Vector3(0, 0, shaftOffset + shaftLength * 0.5f), new Vector3(0.004f, shaftLength * 0.5f, 0.004f),
-                 Quaternion.Euler(90, 0, 0), steel);                                                                                            // shaft
+            var shaft = Part(PrimitiveType.Cylinder, new Vector3(0, 0, shaftOffset + shaftLength * 0.5f), new Vector3(0.004f, shaftLength * 0.5f, 0.004f),
+                             Quaternion.Euler(90, 0, 0), steel);                                                                                // shaft
+            var xray = Shader.Find("SeptoMentor/XRayShaft");
+            if (xray != null) shaft.sharedMaterials = new[] { steel, new Material(xray) };
             _visual.gameObject.SetActive(false);
         }
 
-        void Part(PrimitiveType t, Vector3 pos, Vector3 scale, Quaternion rot, Material m)
+        MeshRenderer Part(PrimitiveType t, Vector3 pos, Vector3 scale, Quaternion rot, Material m)
         {
             var go = GameObject.CreatePrimitive(t);
             Destroy(go.GetComponent<Collider>());
@@ -113,6 +118,7 @@ namespace SeptoMentor
             var r = go.GetComponent<MeshRenderer>();
             r.sharedMaterial = m;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            return r;
         }
 
         void Update()
@@ -129,6 +135,7 @@ namespace SeptoMentor
                 if (provider != null) provider.externalPose = false;
                 InNose = Touching = false;
                 smoothing.Reset();
+                _guide.Reset();
                 return;
             }
 
@@ -136,12 +143,17 @@ namespace SeptoMentor
             var wPos = origin != null ? origin.TransformPoint(pos) : pos;
             var wRot = origin != null ? origin.rotation * rot : rot;
             smoothing.Filter(ref wPos, ref wRot, Time.deltaTime);
-            transform.SetPositionAndRotation(wPos, wRot);
 
             var tip = wPos + wRot * new Vector3(0, 0, shaftOffset + shaftLength);
             var ph = room.PatientHead;
-            var tipH = ph.InverseTransformPoint(tip);
             var rotH = Quaternion.Inverse(ph.rotation) * wRot;
+            // The nostril holds the 4 mm shaft: the whole scope shifts so it passes through the opening.
+            var shiftH = _guide.Apply(ph.InverseTransformPoint(tip), rotH * Vector3.forward, 0.002f, Time.deltaTime, out bool entered);
+            if (entered) Haptics.Pulse(hand, 0.3f, 0.025f);
+            var shift = ph.TransformVector(shiftH);
+            wPos += shift; tip += shift;
+            transform.SetPositionAndRotation(wPos, wRot);
+            var tipH = ph.InverseTransformPoint(tip);
 
             var patient = provider.patient;
             if (patient.PhantomAligned && !InNose)
